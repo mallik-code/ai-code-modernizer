@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv:*)",
+      "Bash(nul)",
+      "Bash(rmdir agents graph tools llm config utils api tests frontend/src/components frontend/src/pages frontend/src/hooks frontend/public 2)",
+      "Bash(if not exist \"C:\\projects\\ai-code-modernizer\\README.md\" echo.)",
+      "Bash(\"C:\\projects\\ai-code-modernizer\\README.md\")",
+      "Bash(agents/__init__.py)",
+      "Bash(graph/__init__.py)",
+      "Bash(tools/__init__.py)",
+      "Bash(llm/__init__.py)",
+      "Bash(config/__init__.py)",
+      "Bash(utils/__init__.py)",
+      "Bash(api/__init__.py)",
+      "Bash(tests/__init__.py)",
+      "Bash(tree:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
