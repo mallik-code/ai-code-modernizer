@@ -17,7 +17,7 @@ The AI Code Modernizer Backend is a sophisticated Python application that levera
 
 ### Multi-Agent System
 All agents inherit from `BaseAgent` which provides:
-- LLM client integration with Anthropic API
+- LLM client integration with flexible provider support (Anthropic, OpenAI, Gemini, HuggingFace, Qwen)
 - MCP tool manager access for secure operations
 - Structured logging with rich context
 - Conversation history tracking
@@ -28,10 +28,23 @@ All agents inherit from `BaseAgent` which provides:
 3. **Error Analyzer** - Parses error logs, identifies root causes, generates fix suggestions, and proposes alternative strategies
 4. **Staging Deployer** - Creates Git branches, commits changes, and creates pull requests via MCP GitHub tools
 
+### Multi-Provider LLM Architecture
+The system supports multiple LLM providers through a flexible factory pattern:
+
+- **Base Interface** (`llm/base.py`) - Abstract base class for all LLM providers
+- **Provider Implementations**:
+  - `llm/anthropic_client.py` - Anthropic Claude models
+  - `llm/openai_client.py` - OpenAI GPT models  
+  - `llm/gemini_client.py` - Google Gemini models
+  - `llm/huggingface_client.py` - Hugging Face hosted models
+  - `llm/qwen_client.py` - Qwen (Alibaba Cloud) models
+- **Factory Pattern** (`llm/factory.py`) - Creates appropriate LLM client based on configuration
+- **Flexible Agent Integration** (`agents/base.py`) - Supports provider selection per agent instance
+
 ### Core Components
 - **MCP Tool Manager** (`tools/mcp_tools.py`) - Manages connections to MCP servers and exposes tools for file operations and GitHub integration
 - **LangGraph Workflow** (`graph/workflow.py`) - Orchestrates agents in a stateful workflow with conditional routing and retry logic
-- **Cost Tracker** (`utils/cost_tracker.py`) - Automatically tracks token usage and costs for LLM operations
+- **Cost Tracker** (`utils/cost_tracker.py`) - Automatically tracks token usage and costs for LLM operations across all providers
 - **Docker Validator** (`tools/docker_tools.py`) - Handles containerized validation of code changes
 
 ## Building and Running
@@ -75,8 +88,8 @@ API docs: http://localhost:8000/docs
 ### Testing Individual Components
 Each component is independently executable for testing:
 ```bash
-# Test LLM client
-python llm/client.py
+# Test flexible LLM system
+python -m llm.test_flexible_llm
 
 # Test MCP tools
 python tools/mcp_tools.py
@@ -88,7 +101,7 @@ python utils/cost_tracker.py
 python utils/logger.py
 
 # Test base agent
-python agents/base.py
+python agents/test_flexible_agent.py
 
 # Test specific agent
 python agents/migration_planner.py --project ./test-projects/express-app
@@ -156,19 +169,53 @@ pytest tests/ -v -s                        # Show print statements
 
 Required in `.env`:
 ```bash
-# Required
+# LLM Provider Configuration
+# Select which LLM provider to use (anthropic, openai, gemini, huggingface, qwen)
+LLM_PROVIDER=anthropic
+
+# Anthropic API
 ANTHROPIC_API_KEY=sk-ant-xxxxx
+ANTHROPIC_MODEL=claude-sonnet-4-20250514
+
+# OpenAI API
+OPENAI_API_KEY=sk-xxxxx
+OPENAI_MODEL=gpt-4o
+
+# Google Gemini API
+GOOGLE_API_KEY=xxxxx
+GEMINI_MODEL=gemini-2.0-flash
+
+# HuggingFace API
+HUGGINGFACE_API_KEY=hf_xxxxx
+HUGGINGFACE_MODEL=meta-llama/Llama-3.2-3B-Instruct
+
+# Qwen API (via DashScope)
+QWEN_API_KEY=sk-xxxxx-xxx-xxx-xxx  # Also can use DASHSCOPE_API_KEY
+QWEN_MODEL=qwen-turbo
+
+# GitHub Integration
 GITHUB_TOKEN=ghp_xxxxx
 
-# Optional
+# LangChain Tracing (Optional)
 LANGCHAIN_TRACING_V2=false
 LANGCHAIN_API_KEY=ls__xxxxx
+
+# OpenRouter (Future Use)
+OPENROUTER_API_KEY=sk-or-xxxxx
+
+# Database
 DATABASE_URL=sqlite:///./modernizer.db
+
+# API Configuration
 API_HOST=0.0.0.0
 API_PORT=8000
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+
+# Docker Configuration
 DOCKER_TIMEOUT=300
 MAX_RETRY_ATTEMPTS=3
+
+# Feature Flags
 ENABLE_STAGING_DEPLOYMENT=true
 ENABLE_AUTO_FIX=true
 ```
@@ -176,6 +223,10 @@ ENABLE_AUTO_FIX=true
 ## Key Dependencies
 
 - `anthropic>=0.18.0` - Claude API for AI reasoning
+- `openai>=1.35.0` - OpenAI API for GPT models
+- `google-generativeai>=0.8.0` - Google Gemini API
+- `huggingface_hub>=0.20.0` - Hugging Face model hub access
+- `dashscope>=1.13.0` - Alibaba Cloud DashScope SDK for Qwen models
 - `langgraph>=0.2.16` - Multi-agent orchestration framework
 - `mcp>=0.1.0` - Model Context Protocol for secure tool access
 - `fastapi>=0.104.0` - Web framework with automatic API documentation
@@ -218,6 +269,7 @@ This project implements comprehensive security measures following the security-f
 
 ## Debugging
 
+- **LLM issues**: Run `python -m llm.test_flexible_llm` to test all LLM providers
 - **MCP issues**: Run `python tools/mcp_tools.py` to test connectivity
 - **Agent issues**: Run agent standalone with test data
 - **Workflow issues**: Check state transitions and conditional logic in `graph/workflow.py`

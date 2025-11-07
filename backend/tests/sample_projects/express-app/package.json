@@ -1,0 +1,27 @@
+{
+  "name": "express-legacy-app",
+  "version": "1.0.0",
+  "description": "Legacy Express.js application with outdated dependencies for testing code modernization",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": ["express", "legacy", "test"],
+  "author": "AI Code Modernizer Team",
+  "license": "MIT",
+  "dependencies": {
+    "express": "4.16.0",
+    "body-parser": "1.18.3",
+    "cors": "2.8.4",
+    "dotenv": "6.0.0",
+    "morgan": "1.9.1"
+  },
+  "devDependencies": {
+    "nodemon": "1.18.4"
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  }
+}
