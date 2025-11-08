@@ -1,25 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(xargs:*)",
-      "Bash(python -m pip install:*)",
-      "Bash(timeout 120 python -m pip install -r requirements.txt)",
-      "Bash(python -m llm.test_flexible_llm:*)",
-      "Bash(pip install:*)",
-      "Bash(where:*)",
-      "Bash(.venvScriptspython.exe -m pip install -r requirements.txt)",
-      "Bash(\".venv/Scripts/python.exe\" -m pip install -r requirements.txt)",
-      "Bash(\".venv/Scripts/python.exe\" -m llm.test_flexible_llm)",
-      "Bash(mkdir:*)",
-      "Bash(nul)",
-      "Bash(\".venv/Scripts/python.exe\" tools/test_mcp.py)",
-      "Bash(.venvScriptspython.exe agents/migration_planner.py)",
-      "Bash(\".venv/Scripts/python.exe\" agents/migration_planner.py)",
-      "Bash(\".venv/Scripts/python.exe\" -m agents.migration_planner)",
-      "Bash(test:*)",
-      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/test_migration_planner.py -v)",
-      "Bash(docker --version:*)",
-      "Bash(\".venv/Scripts/python.exe\" -m tools.docker_tools)"
+      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/ -v --co -q)"
     ],
     "deny": [],
     "ask": []

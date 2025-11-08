@@ -25,8 +25,8 @@ All agents inherit from `BaseAgent` which provides:
 **Four Specialized Agents**:
 1. **Migration Planner** ✅ - Analyzes dependency files, identifies outdated dependencies, researches breaking changes, and creates phased migration plans. Features robust multi-LLM response parsing that handles varying formats from different providers (Gemini, Claude, GPT, Qwen, Llama).
 2. **Runtime Validator** ✅ - Creates Docker containers, applies upgrades, runs applications, tests health endpoints, and returns validation results with LLM-powered analysis.
-3. **Error Analyzer** (Planned) - Will parse error logs, identify root causes, generate fix suggestions, and propose alternative strategies
-4. **Staging Deployer** (Planned) - Will create Git branches, commit changes, and create pull requests via MCP GitHub tools
+3. **Error Analyzer** ✅ - Parses error logs (npm, pip, runtime), identifies root causes, generates fix suggestions with LLM-powered analysis and fallback categorization. Extracts code context and proposes alternative strategies. Features smart pattern matching to avoid false positives (e.g., "TypeError" vs "peer dependency").
+4. **Staging Deployer** ✅ - Creates Git branches, updates dependency files (package.json/requirements.txt), generates conventional commits, creates detailed PR descriptions, and integrates with GitHub via MCP tools. Implements human-in-the-loop approval via pull requests.
 
 ### Multi-Provider LLM Architecture
 The system supports multiple LLM providers through a flexible factory pattern:
@@ -120,8 +120,11 @@ python -m tools.docker_tools
 ### Running Tests
 ```bash
 # Unit tests (fast, mocked, no API keys needed)
-pytest tests/ -v                           # All unit tests
+pytest tests/ -v                           # All unit tests (48 tests total)
 pytest tests/test_migration_planner.py -v  # Migration planner (7 tests)
+pytest tests/test_staging_deployer.py -v   # Staging deployer (19 tests)
+pytest tests/test_error_analyzer.py -v     # Error analyzer (19 tests)
+pytest tests/test_end_to_end.py -v         # Integration tests (3 tests, requires API keys)
 pytest tests/ --cov=. --cov-report=html    # With coverage
 pytest tests/ -v -s                        # Show print statements
 
