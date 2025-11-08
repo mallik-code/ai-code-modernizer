@@ -17,16 +17,18 @@ These documents contain mandatory patterns and anti-patterns. All code must comp
 
 Python backend using LangGraph to orchestrate AI agents that analyze, validate, and upgrade code dependencies. The system features flexible multi-LLM provider support and MCP (Model Context Protocol) for tool access.
 
-**Implementation Status**: Phase 3 In Progress (50% Complete - 2025-11-07)
+**Implementation Status**: Phase 3 In Progress (50% Complete - 2025-11-08)
 - ✅ Multi-LLM provider support (Anthropic, OpenAI, Gemini, HuggingFace, Qwen)
 - ✅ Cost tracking across all providers
 - ✅ Structured logging infrastructure
 - ✅ Base agent architecture
 - ✅ MCP tool manager (Phase 1 complete - subprocess + fallback)
-- ✅ Migration Planner Agent (complete with 7 unit tests)
+- ✅ Migration Planner Agent (complete with 7 unit tests + robust multi-LLM parsing)
 - ✅ Runtime Validator Agent (complete)
 - ✅ Docker validation tools (complete and tested)
 - ✅ Sample Express.js project (complete)
+- ✅ End-to-end integration tests (complete)
+- ✅ Comprehensive testing guide (TESTING_GUIDE.md)
 - ❌ Error Analyzer Agent (not yet implemented)
 - ❌ Staging Deployer Agent (not yet implemented)
 - ❌ LangGraph workflow (not yet implemented)
@@ -71,7 +73,14 @@ All agents inherit from `BaseAgent` (`agents/base.py`) which provides:
    - Identifies outdated dependencies via LLM analysis
    - Researches breaking changes
    - Creates phased migration plans with risk assessment
+   - **Robust Multi-LLM Parsing**: Handles varying response formats from different providers
+     - Normalizes field names: camelCase ↔ snake_case (e.g., `currentVersion` → `current_version`)
+     - Supports both array and object dependency formats
+     - Handles multiple phase naming conventions (`phase1`, `phase_1`, `phases` array)
+     - Extracts risk levels from assessment text
+     - Provides sensible defaults for missing fields
    - **Test**: 7 unit tests, all passing (`tests/test_migration_planner.py`)
+   - **Tested with**: Gemini 2.0 Flash, Anthropic Claude Sonnet 4
 
 2. ✅ **Runtime Validator** (`agents/runtime_validator.py`) - COMPLETE
    - Uses DockerValidator for isolated testing
@@ -207,6 +216,24 @@ report = agent.llm.cost_tracker.get_report()
 
 ## Quick Start - Testing Current Implementation
 
+### Complete Testing Guide ✅
+See `TESTING_GUIDE.md` for comprehensive testing documentation including:
+- Quick start commands
+- Expected test times and costs
+- Provider comparison (Gemini ~$0.001 vs Claude ~$0.015 per test)
+- Troubleshooting guide
+- Performance benchmarks
+
+### Test End-to-End Workflow ✅ NEW
+```bash
+# Full workflow: Migration Planner → Runtime Validator
+".venv/Scripts/python.exe" tests/test_end_to_end.py
+
+# Quick tests
+".venv/Scripts/python.exe" tests/test_end_to_end.py --test planner  # ~30s, ~$0.001 with Gemini
+".venv/Scripts/python.exe" tests/test_end_to_end.py --test docker   # ~60s, no LLM cost
+```
+
 ### Test Flexible LLM System ✅
 ```bash
 # Test all LLM providers
@@ -221,19 +248,21 @@ report = agent.llm.cost_tracker.get_report()
 
 ### Test Migration Planner Agent ✅
 ```bash
-# Run unit tests (mocked LLM)
+# Run unit tests (mocked LLM - fast, free)
 ".venv/Scripts/python.exe" -m pytest tests/test_migration_planner.py -v
-# ✅ 7 tests PASSED in 0.27s
+# ✅ 7 tests PASSED in <1s, $0 cost
 
-# Run standalone (requires API key)
-# ".venv/Scripts/python.exe" -m agents.migration_planner
+# Run standalone with real LLM (requires API key)
+".venv/Scripts/python.exe" -m agents.migration_planner
+# ✅ Works with all providers: Gemini (~$0.0005), Claude (~$0.015)
+# ✅ Robust parsing handles different LLM response formats
 ```
 
 ### Test Docker Validation Tools ✅
 ```bash
 # Test with sample Express app
 ".venv/Scripts/python.exe" -m tools.docker_tools
-# ✅ All stages successful
+# ✅ All stages successful (~60 seconds)
 ```
 
 ### Test MCP Tools ✅
@@ -314,10 +343,15 @@ python -m tools.docker_tools
 
 ### Running Tests
 ```bash
-pytest tests/ -v                           # All tests
+pytest tests/ -v                           # All unit tests (fast, mocked)
 pytest tests/test_migration_planner.py -v  # Migration planner tests (7 tests)
-pytest tests/ --cov=. --cov-report=html    # With coverage
+pytest tests/ --cov=. --cov-report=html    # With coverage report
 pytest tests/ -v -s                        # Show print statements
+
+# Integration tests (require API keys and Docker)
+python tests/test_end_to_end.py            # Full E2E workflow
+python tests/test_end_to_end.py --test planner  # Just migration planner
+python tests/test_end_to_end.py --test docker   # Just Docker validation
 ```
 
 ### MCP Server Installation (Optional - Not Required Yet)

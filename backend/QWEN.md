@@ -23,10 +23,10 @@ All agents inherit from `BaseAgent` which provides:
 - Conversation history tracking
 
 **Four Specialized Agents**:
-1. **Migration Planner** - Analyzes dependency files, identifies outdated dependencies, researches breaking changes, and creates phased migration plans
-2. **Runtime Validator** - Creates Docker containers, applies upgrades, runs applications, tests health endpoints, and returns validation results
-3. **Error Analyzer** - Parses error logs, identifies root causes, generates fix suggestions, and proposes alternative strategies
-4. **Staging Deployer** - Creates Git branches, commits changes, and creates pull requests via MCP GitHub tools
+1. **Migration Planner** ✅ - Analyzes dependency files, identifies outdated dependencies, researches breaking changes, and creates phased migration plans. Features robust multi-LLM response parsing that handles varying formats from different providers (Gemini, Claude, GPT, Qwen, Llama).
+2. **Runtime Validator** ✅ - Creates Docker containers, applies upgrades, runs applications, tests health endpoints, and returns validation results with LLM-powered analysis.
+3. **Error Analyzer** (Planned) - Will parse error logs, identify root causes, generate fix suggestions, and propose alternative strategies
+4. **Staging Deployer** (Planned) - Will create Git branches, commit changes, and create pull requests via MCP GitHub tools
 
 ### Multi-Provider LLM Architecture
 The system supports multiple LLM providers through a flexible factory pattern:
@@ -88,38 +88,57 @@ API docs: http://localhost:8000/docs
 ### Testing Individual Components
 Each component is independently executable for testing:
 ```bash
-# Test flexible LLM system
+# Test flexible LLM system (all providers)
 python -m llm.test_flexible_llm
 
 # Test MCP tools
-python tools/mcp_tools.py
+python tools/test_mcp.py
 
 # Test cost tracker
-python utils/cost_tracker.py
+python -m utils.cost_tracker
 
 # Test logger
-python utils/logger.py
+python -m utils.logger
 
 # Test base agent
-python agents/test_flexible_agent.py
+python -m agents.base
 
-# Test specific agent
-python agents/migration_planner.py --project ./test-projects/express-app
-python agents/runtime_validator.py --project ./test-projects/express-app --strategy strategy.json
-python agents/error_analyzer.py --logs validation_logs.txt
+# Test LLM providers
+python -m tests.test_llm_providers
 
-# Test workflow
-python graph/workflow.py
+# Test Migration Planner (with real LLM)
+python -m agents.migration_planner
+# Works with any provider: Gemini (~$0.0005), Claude (~$0.015), Qwen (~$0.0001)
+
+# Test Runtime Validator (requires Docker + API key)
+python -m agents.runtime_validator
+
+# Test Docker tools
+python -m tools.docker_tools
 ```
 
 ### Running Tests
 ```bash
-pytest tests/ -v                           # All tests
-pytest tests/test_agents.py -v             # Specific test file
-pytest tests/test_agents.py::test_name -v  # Specific test
+# Unit tests (fast, mocked, no API keys needed)
+pytest tests/ -v                           # All unit tests
+pytest tests/test_migration_planner.py -v  # Migration planner (7 tests)
 pytest tests/ --cov=. --cov-report=html    # With coverage
 pytest tests/ -v -s                        # Show print statements
+
+# Integration tests (require API keys + Docker)
+python tests/test_end_to_end.py            # Full E2E workflow
+python tests/test_end_to_end.py --test planner  # Just migration planner (~30s)
+python tests/test_end_to_end.py --test docker   # Just Docker validation (~60s)
 ```
+
+### Comprehensive Testing Guide
+See `TESTING_GUIDE.md` for complete documentation including:
+- Quick start commands for all test types
+- Expected test times and costs per provider
+- Provider cost comparison (Gemini: ~$0.001, Claude: ~$0.015, Qwen: ~$0.0005)
+- Troubleshooting common issues
+- Performance benchmarks
+- Testing strategies by use case
 
 ## Development Conventions
 
