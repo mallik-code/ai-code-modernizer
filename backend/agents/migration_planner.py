@@ -140,6 +140,10 @@ Be thorough, accurate, and prioritize safety."""
             migration_plan["dependency_file"] = dependency_data["file_path"]
             migration_plan["raw_dependencies"] = dependency_data["raw_content"]
 
+            # Ensure project_type is set correctly if LLM didn't provide it
+            if migration_plan.get("project_type") == "unknown":
+                migration_plan["project_type"] = dependency_data["project_type"]
+
             # Log cost
             cost_report = self.llm.cost_tracker.get_report()
             self.logger.info("migration_plan_complete",
@@ -318,7 +322,7 @@ OUTPUT FORMAT: Return ONLY valid JSON matching the specified schema. No markdown
                 # Some LLMs return dependencies in a differently named field
                 plan["dependencies"] = plan["dependenciesAnalysis"]
                 del plan["dependenciesAnalysis"]
-            
+
             if "dependencies" in plan:
                 if isinstance(plan["dependencies"], list):
                     # Convert array format to object format
@@ -328,8 +332,180 @@ OUTPUT FORMAT: Return ONLY valid JSON matching the specified schema. No markdown
                     for dep in plan["dependencies"]:
                         if "name" in dep:
                             pkg_name = dep.pop("name")  # Remove 'name' and use as key
-                            dependencies_obj[pkg_name] = dep
+
+                            # Normalize field names (different LLMs use different naming)
+                            normalized_dep = {}
+                            for key, value in dep.items():
+                                # Convert camelCase to snake_case and map to standard fields
+                                if key in ["currentVersion", "current_version"]:
+                                    normalized_dep["current_version"] = value
+                                elif key in ["latestVersion", "latest_version", "target_version", "targetVersion"]:
+                                    normalized_dep["target_version"] = value
+                                elif key in ["migrationRisk", "migration_risk", "risk"]:
+                                    normalized_dep["risk"] = value.lower() if isinstance(value, str) else value
+                                elif key in ["breakingChanges", "breaking_changes"]:
+                                    # Handle both string and list formats
+                                    if isinstance(value, str):
+                                        normalized_dep["breaking_changes"] = [value] if value else []
+                                    else:
+                                        normalized_dep["breaking_changes"] = value
+                                elif key == "action":
+                                    normalized_dep["action"] = value
+                                elif key in ["notes", "reason"]:
+                                    normalized_dep["reason"] = value
+                                else:
+                                    # Keep other fields as-is
+                                    normalized_dep[key] = value
+
+                            dependencies_obj[pkg_name] = normalized_dep
                     plan["dependencies"] = dependencies_obj
+                elif isinstance(plan["dependencies"], dict):
+                    # Object format already, but normalize field names
+                    dependencies_obj = {}
+                    for pkg_name, dep in plan["dependencies"].items():
+                        normalized_dep = {}
+                        for key, value in dep.items():
+                            # Convert camelCase to snake_case and map to standard fields
+                            if key in ["currentVersion", "current_version"]:
+                                normalized_dep["current_version"] = value
+                            elif key in ["latestVersion", "latest_version", "target_version", "targetVersion"]:
+                                normalized_dep["target_version"] = value
+                            elif key in ["migrationRisk", "migration_risk", "risk"]:
+                                normalized_dep["risk"] = value.lower() if isinstance(value, str) else value
+                            elif key in ["breakingChanges", "breaking_changes"]:
+                                # Handle both string and list formats
+                                if isinstance(value, str):
+                                    normalized_dep["breaking_changes"] = [value] if value else []
+                                else:
+                                    normalized_dep["breaking_changes"] = value
+                            elif key == "action":
+                                normalized_dep["action"] = value
+                            elif key in ["notes", "reason"]:
+                                normalized_dep["reason"] = value
+                            else:
+                                # Keep other fields as-is
+                                normalized_dep[key] = value
+
+                        dependencies_obj[pkg_name] = normalized_dep
+                    plan["dependencies"] = dependencies_obj
+
+            # Normalize migration strategy format
+            if "migrationStrategy" in plan and "migration_strategy" not in plan:
+                strategy = plan["migrationStrategy"]
+                del plan["migrationStrategy"]
+
+                # Convert phase1/phase2/phase3 or phase_1/phase_2/phase_3 format to phases array
+                if "phase1" in strategy or "phase2" in strategy or "phase3" in strategy or \
+                   "phase_1" in strategy or "phase_2" in strategy or "phase_3" in strategy:
+                    phases = []
+                    phase_num = 1
+
+                    # Try both formats: phase1 and phase_1
+                    while f"phase{phase_num}" in strategy or f"phase_{phase_num}" in strategy:
+                        phase_key = f"phase{phase_num}" if f"phase{phase_num}" in strategy else f"phase_{phase_num}"
+                        phase_data = strategy[phase_key]
+                        phases.append({
+                            "phase": phase_num,
+                            "name": phase_data.get("description", f"Phase {phase_num}"),
+                            "dependencies": phase_data.get("dependencies", []),
+                            "description": phase_data.get("description", ""),
+                            "estimated_time": phase_data.get("estimatedTime", phase_data.get("estimated_time", "unknown")),
+                            "rollback_plan": phase_data.get("rollbackPlan", phase_data.get("rollback_plan", ""))
+                        })
+                        phase_num += 1
+
+                    plan["migration_strategy"] = {
+                        "total_phases": len(phases),
+                        "phases": phases
+                    }
+                else:
+                    plan["migration_strategy"] = strategy
+            elif "migration_strategy" in plan:
+                strategy = plan["migration_strategy"]
+
+                # Also handle if migration_strategy already exists but in phase_X format
+                if "phase_1" in strategy or "phase_2" in strategy or "phase_3" in strategy:
+                    phases = []
+                    phase_num = 1
+
+                    while f"phase_{phase_num}" in strategy:
+                        phase_data = strategy[f"phase_{phase_num}"]
+                        phases.append({
+                            "phase": phase_num,
+                            "name": phase_data.get("description", f"Phase {phase_num}"),
+                            "dependencies": phase_data.get("dependencies", []),
+                            "description": phase_data.get("description", ""),
+                            "estimated_time": phase_data.get("estimatedTime", phase_data.get("estimated_time", "unknown")),
+                            "rollback_plan": phase_data.get("rollbackPlan", phase_data.get("rollback_plan", ""))
+                        })
+                        phase_num += 1
+
+                    plan["migration_strategy"] = {
+                        "total_phases": len(phases),
+                        "phases": phases
+                    }
+
+            # Normalize top-level fields
+            if "overallRiskAssessment" in plan and "overall_risk" not in plan:
+                # Extract just the risk level (low/medium/high) from assessment text
+                assessment = plan["overallRiskAssessment"]
+                if isinstance(assessment, str):
+                    assessment_lower = assessment.lower()
+                    if "high" in assessment_lower:
+                        plan["overall_risk"] = "high"
+                    elif "medium" in assessment_lower:
+                        plan["overall_risk"] = "medium"
+                    elif "low" in assessment_lower:
+                        plan["overall_risk"] = "low"
+                    else:
+                        plan["overall_risk"] = "medium"  # default
+                del plan["overallRiskAssessment"]
+            elif "overall_risk_assessment" in plan and "overall_risk" not in plan:
+                # Handle snake_case version
+                assessment = plan["overall_risk_assessment"]
+                if isinstance(assessment, str):
+                    assessment_lower = assessment.lower()
+                    if "high" in assessment_lower:
+                        plan["overall_risk"] = "high"
+                    elif "medium" in assessment_lower:
+                        plan["overall_risk"] = "medium"
+                    elif "low" in assessment_lower:
+                        plan["overall_risk"] = "low"
+                    else:
+                        plan["overall_risk"] = "medium"  # default
+                del plan["overall_risk_assessment"]
+
+            if "overallRecommendations" in plan and "recommendations" not in plan:
+                recs = plan["overallRecommendations"]
+                # Convert string to array if needed
+                if isinstance(recs, str):
+                    plan["recommendations"] = [recs]
+                else:
+                    plan["recommendations"] = recs
+                del plan["overallRecommendations"]
+            elif "overall_recommendations" in plan and "recommendations" not in plan:
+                # Handle snake_case version
+                recs = plan["overall_recommendations"]
+                if isinstance(recs, str):
+                    plan["recommendations"] = [recs]
+                else:
+                    plan["recommendations"] = recs
+                del plan["overall_recommendations"]
+
+            # Add missing fields with defaults
+            if "project_type" not in plan:
+                plan["project_type"] = "unknown"
+            if "analysis_date" not in plan:
+                from datetime import datetime
+                plan["analysis_date"] = datetime.now().isoformat()
+            if "overall_risk" not in plan:
+                plan["overall_risk"] = "medium"
+            if "estimated_total_time" not in plan:
+                # Calculate from phases if available
+                if "migration_strategy" in plan and "phases" in plan["migration_strategy"]:
+                    plan["estimated_total_time"] = "See individual phases"
+                else:
+                    plan["estimated_total_time"] = "unknown"
 
             # Validate required fields
             required_fields = ["dependencies", "migration_strategy"]
