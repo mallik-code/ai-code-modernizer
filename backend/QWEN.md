@@ -43,7 +43,7 @@ The system supports multiple LLM providers through a flexible factory pattern:
 
 ### Core Components
 - **MCP Tool Manager** (`tools/mcp_tools.py`) - Manages connections to MCP servers and exposes tools for file operations and GitHub integration
-- **LangGraph Workflow** (`graph/workflow.py`) - Orchestrates agents in a stateful workflow with conditional routing and retry logic
+- **LangGraph Workflow** ✅ (`graph/workflow.py`) - Orchestrates all 4 agents in a stateful workflow with conditional routing, retry logic (up to 3 attempts), and automatic error recovery. Routes validation failures to Error Analyzer, retries with fixes, and deploys successful upgrades via Staging Deployer.
 - **Cost Tracker** (`utils/cost_tracker.py`) - Automatically tracks token usage and costs for LLM operations across all providers
 - **Docker Validator** (`tools/docker_tools.py`) - Handles containerized validation of code changes
 
@@ -120,11 +120,12 @@ python -m tools.docker_tools
 ### Running Tests
 ```bash
 # Unit tests (fast, mocked, no API keys needed)
-pytest tests/ -v                           # All unit tests (48 tests total)
+pytest tests/ -v                           # All unit tests (66 tests total)
 pytest tests/test_migration_planner.py -v  # Migration planner (7 tests)
 pytest tests/test_staging_deployer.py -v   # Staging deployer (19 tests)
 pytest tests/test_error_analyzer.py -v     # Error analyzer (19 tests)
-pytest tests/test_end_to_end.py -v         # Integration tests (3 tests, requires API keys)
+pytest tests/test_workflow.py -v           # Workflow routing/state (15 tests)
+pytest tests/test_workflow_integration.py -v  # Workflow integration (3 tests)
 pytest tests/ --cov=. --cov-report=html    # With coverage
 pytest tests/ -v -s                        # Show print statements
 
@@ -132,6 +133,9 @@ pytest tests/ -v -s                        # Show print statements
 python tests/test_end_to_end.py            # Full E2E workflow
 python tests/test_end_to_end.py --test planner  # Just migration planner (~30s)
 python tests/test_end_to_end.py --test docker   # Just Docker validation (~60s)
+
+# Test complete LangGraph workflow
+python -m graph.workflow                   # Full workflow (requires API keys + Docker)
 ```
 
 ### Comprehensive Testing Guide

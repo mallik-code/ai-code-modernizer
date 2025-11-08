@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/ -v --co -q)"
+      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/ -v --co -q)",
+      "Bash(if not exist graph mkdir graph)",
+      "Bash(\".venv/Scripts/python.exe\" -m graph.state)",
+      "Bash(\".venv/Scripts/python.exe\" -m graph.workflow)",
+      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/test_workflow.py -v)",
+      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/test_workflow_integration.py::TestWorkflowIntegration::test_workflow_with_mocked_agents -v -s)"
     ],
     "deny": [],
     "ask": []
