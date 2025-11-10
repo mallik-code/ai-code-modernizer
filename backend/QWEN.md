@@ -78,6 +78,8 @@ npm install -g @modelcontextprotocol/server-github
 npm install -g @modelcontextprotocol/server-filesystem
 ```
 
+**Note for Windows Users**: The configuration has been updated to use `npx.cmd` instead of `npx` to ensure proper subprocess execution on Windows systems.
+
 ### Running Backend
 ```bash
 uvicorn api.main:app --reload --host 0.0.0.0 --port 8000

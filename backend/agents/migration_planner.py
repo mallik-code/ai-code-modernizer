@@ -318,10 +318,17 @@ OUTPUT FORMAT: Return ONLY valid JSON matching the specified schema. No markdown
 
             # Handle different formats for dependencies (some LLMs return array format)
             # Handle different field names that different LLMs might use
-            if "dependencies" not in plan and "dependenciesAnalysis" in plan:
-                # Some LLMs return dependencies in a differently named field
-                plan["dependencies"] = plan["dependenciesAnalysis"]
-                del plan["dependenciesAnalysis"]
+            # Check all possible variations: dependencies, dependenciesAnalysis, dependencyAnalysis, dependency_analysis
+            if "dependencies" not in plan:
+                if "dependenciesAnalysis" in plan:
+                    plan["dependencies"] = plan["dependenciesAnalysis"]
+                    del plan["dependenciesAnalysis"]
+                elif "dependencyAnalysis" in plan:
+                    plan["dependencies"] = plan["dependencyAnalysis"]
+                    del plan["dependencyAnalysis"]
+                elif "dependency_analysis" in plan:
+                    plan["dependencies"] = plan["dependency_analysis"]
+                    del plan["dependency_analysis"]
 
             if "dependencies" in plan:
                 if isinstance(plan["dependencies"], list):
@@ -390,12 +397,45 @@ OUTPUT FORMAT: Return ONLY valid JSON matching the specified schema. No markdown
                     plan["dependencies"] = dependencies_obj
 
             # Normalize migration strategy format
-            if "migrationStrategy" in plan and "migration_strategy" not in plan:
-                strategy = plan["migrationStrategy"]
-                del plan["migrationStrategy"]
+            # Check all possible variations: migration_strategy, migrationStrategy, migrationPlan, migration_plan
+            if "migration_strategy" not in plan:
+                if "migrationStrategy" in plan:
+                    strategy = plan["migrationStrategy"]
+                    del plan["migrationStrategy"]
+                elif "migrationPlan" in plan:
+                    strategy = plan["migrationPlan"]
+                    del plan["migrationPlan"]
+                elif "migration_plan" in plan:
+                    strategy = plan["migration_plan"]
+                    del plan["migration_plan"]
+                else:
+                    strategy = None
+            else:
+                strategy = plan["migration_strategy"]
 
+            # Process strategy if found
+            if strategy:
+                # Check if strategy already has "phases" as an array (Gemini format)
+                if "phases" in strategy and isinstance(strategy["phases"], list):
+                    # Normalize each phase to ensure all fields are present
+                    normalized_phases = []
+                    for i, phase_data in enumerate(strategy["phases"], 1):
+                        normalized_phase = {
+                            "phase": phase_data.get("phase", i),  # Use index if phase number not provided
+                            "name": phase_data.get("name", phase_data.get("description", f"Phase {i}")),
+                            "dependencies": phase_data.get("dependencies", []),
+                            "description": phase_data.get("description", phase_data.get("name", "")),
+                            "estimated_time": phase_data.get("estimatedTime", phase_data.get("estimated_time", "unknown")),
+                            "rollback_plan": phase_data.get("rollbackPlan", phase_data.get("rollback_plan", ""))
+                        }
+                        normalized_phases.append(normalized_phase)
+
+                    plan["migration_strategy"] = {
+                        "total_phases": len(normalized_phases),
+                        "phases": normalized_phases
+                    }
                 # Convert phase1/phase2/phase3 or phase_1/phase_2/phase_3 format to phases array
-                if "phase1" in strategy or "phase2" in strategy or "phase3" in strategy or \
+                elif "phase1" in strategy or "phase2" in strategy or "phase3" in strategy or \
                    "phase_1" in strategy or "phase_2" in strategy or "phase_3" in strategy:
                     phases = []
                     phase_num = 1
@@ -419,31 +459,8 @@ OUTPUT FORMAT: Return ONLY valid JSON matching the specified schema. No markdown
                         "phases": phases
                     }
                 else:
+                    # Unknown format, keep as-is
                     plan["migration_strategy"] = strategy
-            elif "migration_strategy" in plan:
-                strategy = plan["migration_strategy"]
-
-                # Also handle if migration_strategy already exists but in phase_X format
-                if "phase_1" in strategy or "phase_2" in strategy or "phase_3" in strategy:
-                    phases = []
-                    phase_num = 1
-
-                    while f"phase_{phase_num}" in strategy:
-                        phase_data = strategy[f"phase_{phase_num}"]
-                        phases.append({
-                            "phase": phase_num,
-                            "name": phase_data.get("description", f"Phase {phase_num}"),
-                            "dependencies": phase_data.get("dependencies", []),
-                            "description": phase_data.get("description", ""),
-                            "estimated_time": phase_data.get("estimatedTime", phase_data.get("estimated_time", "unknown")),
-                            "rollback_plan": phase_data.get("rollbackPlan", phase_data.get("rollback_plan", ""))
-                        })
-                        phase_num += 1
-
-                    plan["migration_strategy"] = {
-                        "total_phases": len(phases),
-                        "phases": phases
-                    }
 
             # Normalize top-level fields
             if "overallRiskAssessment" in plan and "overall_risk" not in plan:

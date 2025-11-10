@@ -17,7 +17,7 @@ These documents contain mandatory patterns and anti-patterns. All code must comp
 
 Python backend using LangGraph to orchestrate AI agents that analyze, validate, and upgrade code dependencies. The system features flexible multi-LLM provider support and MCP (Model Context Protocol) for tool access.
 
-**Implementation Status**: Phase 3 Complete (100% - 2025-11-08)
+**Implementation Status**: Phase 4 In Progress (75% - 2025-11-08)
 - ✅ Multi-LLM provider support (Anthropic, OpenAI, Gemini, HuggingFace, Qwen)
 - ✅ Cost tracking across all providers
 - ✅ Structured logging infrastructure
@@ -31,7 +31,7 @@ Python backend using LangGraph to orchestrate AI agents that analyze, validate, 
 - ✅ Sample Express.js project (complete)
 - ✅ End-to-end integration tests (complete)
 - ✅ Comprehensive testing guide (TESTING_GUIDE.md)
-- ❌ LangGraph workflow (not yet implemented)
+- ✅ LangGraph workflow (complete with 18 unit tests + conditional routing + retry logic)
 - ❌ FastAPI backend (not yet implemented)
 
 See `DEVELOPMENT_PLAN_STATUS.md` for detailed status and `docs/IMPLEMENTATION_PROGRESS.md` for comprehensive progress report.
@@ -177,27 +177,62 @@ result = validator.validate_project(
 # Returns: build_success, install_success, runtime_success, health_check_success
 ```
 
-### LangGraph Workflow ❌ Not Yet Implemented
+### LangGraph Workflow ✅ Complete
 
-**Status**: Not yet implemented - planned for Phase 5
-**File**: `graph/workflow.py`
+**Status**: Fully implemented and tested
+**Files**: `graph/workflow.py`, `graph/state.py`
 
-**Will orchestrate** agents in a stateful workflow:
-- **State Schema** (`graph/state.py`) - `MigrationState` TypedDict passed between agents
-- **Conditional Routing** - Routes to error analyzer on validation failure
-- **Retry Logic** - Attempts fixes up to 3 times (configurable)
-- **Human Interrupts** - Workflow pauses for approval before deployment
+**Features**:
+- ✅ **State Schema** (`graph/state.py`) - `MigrationState` TypedDict passed between agents
+- ✅ **Conditional Routing** - Routes to error analyzer on validation failure
+- ✅ **Retry Logic** - Attempts fixes up to 3 times (configurable via `max_retries`)
+- ✅ **Cost Tracking** - Aggregates LLM costs across all agents
+- ✅ **Error Recovery** - Automatically analyzes failures and retries with fixes
+- ✅ **Deployment** - Creates PR via Staging Deployer on successful validation
 
-**Planned State Fields:**
-```python
-project_path: str           # Path to project
-dependencies: Dict          # Dependency info
-migration_strategy: Optional[Dict]  # Upgrade plan
-validation_result: Optional[Dict]   # Docker validation results
-errors: List[str]           # Errors encountered
-retry_count: int            # Current retry attempt
-status: str                 # analyzing, validating, error, complete
+**Workflow Flow**:
 ```
+User Request → Migration Planner → Runtime Validator → [Success/Failure]
+                                          ↓ Failure (retries < max)
+                                    Error Analyzer → Runtime Validator (retry)
+                                          ↓ Success
+                                    Staging Deployer → GitHub PR
+```
+
+**State Fields**:
+```python
+# Project info
+project_path: str
+project_type: str
+
+# Agent outputs
+migration_plan: Optional[Dict]
+validation_result: Optional[Dict]
+error_analysis: Optional[Dict]
+deployment_result: Optional[Dict]
+
+# Workflow control
+status: str  # initializing, plan_created, validated, deployed, error
+retry_count: int
+max_retries: int
+validation_success: bool
+
+# Results
+pr_url: Optional[str]
+branch_name: Optional[str]
+errors: List[str]
+
+# Cost tracking
+total_cost: float
+agent_costs: Dict[str, float]
+```
+
+**Test Coverage**: 18 unit tests (15 routing/state + 3 integration)
+- Routing logic tests (8 tests)
+- Workflow graph structure (2 tests)
+- State management (3 tests)
+- Integration tests with mocked agents (2 tests)
+- Full workflow execution (1 test, requires API keys)
 
 ### Cost Tracking ✅ Complete
 
@@ -349,10 +384,12 @@ python -m tools.docker_tools
 
 ### Running Tests
 ```bash
-pytest tests/ -v                           # All unit tests (48 tests, fast, mocked)
+pytest tests/ -v                           # All unit tests (66 tests, fast, mocked)
 pytest tests/test_migration_planner.py -v  # Migration planner tests (7 tests)
 pytest tests/test_staging_deployer.py -v   # Staging deployer tests (19 tests)
 pytest tests/test_error_analyzer.py -v     # Error analyzer tests (19 tests)
+pytest tests/test_workflow.py -v           # Workflow routing/state tests (15 tests)
+pytest tests/test_workflow_integration.py -v  # Workflow integration tests (3 tests)
 pytest tests/ --cov=. --cov-report=html    # With coverage report
 pytest tests/ -v -s                        # Show print statements
 
@@ -360,6 +397,9 @@ pytest tests/ -v -s                        # Show print statements
 python tests/test_end_to_end.py            # Full E2E workflow (3 tests)
 python tests/test_end_to_end.py --test planner  # Just migration planner
 python tests/test_end_to_end.py --test docker   # Just Docker validation
+
+# Test complete LangGraph workflow
+python -m graph.workflow                   # Full 4-agent workflow (requires API keys + Docker)
 ```
 
 ### MCP Server Installation (Optional - Not Required Yet)
@@ -370,6 +410,8 @@ npm install -g @modelcontextprotocol/server-filesystem
 # Test MCP connection (uses fallback mode without servers)
 python tools/test_mcp.py
 ```
+
+**Note for Windows Users**: The configuration has been updated to use `npx.cmd` instead of `npx` to ensure proper subprocess execution on Windows systems.
 
 ## Agent Implementation Pattern
 
@@ -564,25 +606,36 @@ Key packages in `requirements.txt`:
 
 ## Progress Summary
 
-**Overall**: 50% complete (3/7 phases)
+**Overall**: 60% complete (4/7 phases)
 
 **Completed**:
 - ✅ Phase 1: Core Infrastructure (100%)
 - ✅ Phase 2: Base Agent Infrastructure (100%)
-- ✅ Phase 3: Core Agents (100% - All 4 agents complete with 48 unit tests)
+- ✅ Phase 3: Core Agents (100% - All 4 agents complete)
+- ✅ Phase 4: LangGraph Workflow (100% - Orchestration complete)
+
+**Current**: Phase 5 - FastAPI Backend (0%)
 
 **Next Steps**:
 1. ✅ ~~Build Error Analyzer Agent~~ COMPLETE
 2. ✅ ~~Build Staging Deployer Agent~~ COMPLETE
-3. Create LangGraph workflow (Phase 4)
+3. ✅ ~~Create LangGraph workflow~~ COMPLETE
 4. Build FastAPI backend (Phase 5)
 5. Build frontend (Phase 6-7)
 
-**Test Coverage**:
+**Test Coverage** (66 total tests, all passing):
 - Migration Planner: 7 tests ✅
 - Staging Deployer: 19 tests ✅
 - Error Analyzer: 19 tests ✅
-- Integration tests: 3 tests ✅
-- **Total**: 48 unit tests, all passing
+- Workflow Routing/State: 15 tests ✅
+- Workflow Integration: 3 tests ✅
+- End-to-End Integration: 3 tests ✅
+
+**Workflow Capabilities**:
+- Orchestrates all 4 agents with conditional routing
+- Automatic retry logic (up to 3 attempts)
+- Error recovery with intelligent fix suggestions
+- Cost tracking across all LLM calls
+- Deployment via GitHub PR creation
 
 See `DEVELOPMENT_PLAN_STATUS.md` for detailed tracking and `docs/IMPLEMENTATION_PROGRESS.md` for comprehensive progress report.

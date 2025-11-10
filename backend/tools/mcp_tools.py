@@ -90,17 +90,88 @@ class MCPToolManager:
                 bufsize=1  # Line buffered
             )
 
+            # Initialize the server by sending the initialize request
+            initialize_request = {
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "params": {
+                    "version": "1.0",
+                    "capabilities": {}
+                },
+                "id": 1
+            }
+            self._send_jsonrpc(process, initialize_request)
+
+            # Get available tools from the server
+            tools = self._get_server_tools(process)
+
             self.servers[server_name] = {
                 "process": process,
                 "config": server_config,
-                "tools": []
+                "tools": tools
             }
 
-            self.logger.info("server_connected", server=server_name, pid=process.pid)
+            self.logger.info("server_connected", server=server_name, pid=process.pid, tools_count=len(tools))
 
         except Exception as e:
             self.logger.error("server_start_failed", server=server_name, error=str(e))
             raise
+
+    def _send_jsonrpc(self, process: subprocess.Popen, request: Dict) -> Optional[Dict]:
+        """Send a JSON-RPC request to the server and optionally return the response."""
+        try:
+            process.stdin.write(json.dumps(request) + "\n")
+            process.stdin.flush()
+
+            # If this is a request that expects a response (has an 'id')
+            if "id" in request:
+                # Read the response
+                response_line = process.stdout.readline()
+                if response_line:
+                    response = json.loads(response_line.strip())
+                    return response
+            return None
+        except Exception as e:
+            self.logger.error("jsonrpc_send_error", error=str(e))
+            return None
+
+    def _get_server_tools(self, process: subprocess.Popen) -> List[Dict]:
+        """Get list of available tools from the server."""
+        try:
+            # Request the list of available tools
+            tools_request = {
+                "jsonrpc": "2.0",
+                "method": "tools/list",
+                "id": 2
+            }
+            response = self._send_jsonrpc(process, tools_request)
+
+            if response and "result" in response:
+                tools_result = response["result"]
+                
+                # Handle different possible formats of the tools result
+                if isinstance(tools_result, dict) and "tools" in tools_result:
+                    # Some servers return a dict with a "tools" key
+                    tools = tools_result["tools"]
+                elif isinstance(tools_result, list):
+                    # Some servers return a list directly
+                    tools = tools_result
+                else:
+                    # If it's neither, treat the whole response as the tools list
+                    tools = tools_result
+
+                if isinstance(tools, list):
+                    self.logger.info("server_tools_retrieved", count=len(tools))
+                    return tools
+                else:
+                    self.logger.warning("tools_not_list_format", tools_type=type(tools), tools=tools_result)
+                    return []
+            else:
+                self.logger.warning("no_tools_retrieved", response=response)
+                return []
+        except Exception as e:
+            self.logger.error("tools_retrieval_error", error=str(e))
+            return []
 
     def list_tools(self) -> List[Dict]:
         """List all available tools from all connected servers.
@@ -112,12 +183,24 @@ class MCPToolManager:
         for server_name, server_data in self.servers.items():
             tools = server_data.get("tools", [])
             for tool in tools:
-                all_tools.append({
-                    **tool,
-                    "server": server_name
-                })
+                # Handle different possible tool formats
+                if isinstance(tool, str):
+                    # If it's just a string, convert to a basic tool dict
+                    all_tools.append({
+                        "name": tool,
+                        "description": f"Tool {tool} from {server_name}",
+                        "server": server_name
+                    })
+                elif isinstance(tool, dict):
+                    # If it's already a dict, add the server info
+                    all_tools.append({
+                        **tool,
+                        "server": server_name
+                    })
+                else:
+                    self.logger.warning("unknown_tool_format", tool=tool, server=server_name)
 
-        # If no servers connected, return mock tools for development
+        # If no servers connected or no tools retrieved, return mock tools for development
         if not all_tools:
             self.logger.warning("no_servers_connected", returning="mock_tools")
             return [
@@ -144,15 +227,61 @@ class MCPToolManager:
         """
         self.logger.info("calling_tool", tool=tool_name, args=arguments)
 
-        # If no servers connected, fallback to direct implementation
-        if not self.servers:
-            self.logger.warning("no_servers_fallback", tool=tool_name)
+        # Find which server owns this tool
+        server_name = self._find_tool_server(tool_name)
+        
+        # If no server owns this tool or no servers connected, fallback to direct implementation
+        if not server_name:
+            self.logger.warning("no_server_for_tool", tool=tool_name)
             return self._fallback_tool_call(tool_name, arguments)
 
-        # Find which server owns this tool
-        # TODO: Implement tool registry from server initialization
-        # For now, fallback to direct implementation
-        return self._fallback_tool_call(tool_name, arguments)
+        # Call the tool on the appropriate server
+        try:
+            server_data = self.servers[server_name]
+            process = server_data["process"]
+            
+            # Create the tool call request
+            tool_call_request = {
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": arguments
+                },
+                "id": 3
+            }
+            
+            response = self._send_jsonrpc(process, tool_call_request)
+            
+            if response and "result" in response:
+                self.logger.info("tool_call_success", tool=tool_name, server=server_name)
+                return response["result"]
+            elif response and "error" in response:
+                self.logger.error("tool_call_error", tool=tool_name, error=response["error"])
+                raise ValueError(f"Tool call failed: {response['error']}")
+            else:
+                self.logger.warning("tool_call_no_response", tool=tool_name)
+                return self._fallback_tool_call(tool_name, arguments)
+        except Exception as e:
+            self.logger.error("tool_call_exception", tool=tool_name, error=str(e))
+            return self._fallback_tool_call(tool_name, arguments)
+
+    def _find_tool_server(self, tool_name: str) -> Optional[str]:
+        """Find which server provides a specific tool.
+        
+        Args:
+            tool_name: Name of the tool to find
+            
+        Returns:
+            Name of the server that provides the tool, or None if not found
+        """
+        for server_name, server_data in self.servers.items():
+            tools = server_data.get("tools", [])
+            for tool in tools:
+                # Check if tool name matches (accounting for possible variations)
+                if tool.get("name") == tool_name:
+                    return server_name
+        return None
 
     def _fallback_tool_call(self, tool_name: str, arguments: Dict) -> Any:
         """Fallback implementation when MCP servers are not connected.

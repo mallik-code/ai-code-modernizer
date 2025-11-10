@@ -36,11 +36,13 @@ from utils.logger import setup_logger
 class DockerValidator:
     """Docker-based validation for dependency upgrades."""
 
-    def __init__(self, timeout: int = 300):
+    def __init__(self, timeout: int = 300, cleanup_containers: Optional[bool] = None):
         """Initialize Docker validator.
 
         Args:
             timeout: Maximum time in seconds for operations (default: 300)
+            cleanup_containers: Whether to cleanup containers after validation.
+                              If None, reads from DOCKER_CLEANUP_CONTAINERS env var (default: True)
 
         Raises:
             RuntimeError: If Docker is not available
@@ -51,6 +53,13 @@ class DockerValidator:
         self.timeout = timeout
         self.logger = setup_logger("docker_validator")
         self.containers: List[Container] = []
+
+        # Read cleanup setting from env var or use provided value
+        if cleanup_containers is None:
+            cleanup_env = os.getenv("DOCKER_CLEANUP_CONTAINERS", "true").lower()
+            self.cleanup_containers = cleanup_env in ("true", "1", "yes")
+        else:
+            self.cleanup_containers = cleanup_containers
 
         try:
             self.client = docker.from_env()
@@ -95,6 +104,7 @@ class DockerValidator:
         result = {
             "status": "error",
             "container_id": None,
+            "container_name": None,
             "build_success": False,
             "install_success": False,
             "runtime_success": False,
@@ -108,8 +118,9 @@ class DockerValidator:
             # Create container
             container, image_name = self._create_container(project_path, project_type)
             result["container_id"] = container.id[:12]
+            result["container_name"] = container.name
             result["build_success"] = True
-            self.logger.info("container_created", container_id=result["container_id"])
+            self.logger.info("container_created", container_id=result["container_id"], name=result["container_name"])
 
             # Copy project files
             self._copy_project_to_container(container, project_path)
@@ -150,9 +161,13 @@ class DockerValidator:
             self.logger.error("validation_failed", error=error_msg, exc_info=True)
 
         finally:
-            # Cleanup
-            if container:
+            # Cleanup based on configuration
+            if container and self.cleanup_containers:
                 self._cleanup_container(container)
+            elif container:
+                self.logger.info("container_kept_for_debugging",
+                               container_id=result["container_id"],
+                               container_name=result["container_name"])
 
         return result
 
@@ -183,15 +198,30 @@ class DockerValidator:
         except Exception as e:
             self.logger.warning("image_pull_failed", error=str(e))
 
+        # Generate container name from project path
+        project_name = Path(project_path).name
+        # Sanitize name for Docker (lowercase, alphanumeric, hyphens, underscores only)
+        container_name = f"ai-modernizer-{project_name.lower().replace('_', '-')}"
+
+        # Remove any existing container with same name
+        try:
+            old_container = self.client.containers.get(container_name)
+            self.logger.info("removing_old_container", name=container_name)
+            old_container.remove(force=True)
+        except Exception:
+            pass  # Container doesn't exist, which is fine
+
         # Create container
         container = self.client.containers.create(
             image=image_name,
+            name=container_name,
             command="tail -f /dev/null",  # Keep container running
             working_dir=working_dir,
             detach=True,
             network_mode="bridge"
         )
 
+        self.logger.info("container_created_with_name", container_id=container.id[:12], name=container_name)
         container.start()
         self.containers.append(container)
 
@@ -270,7 +300,13 @@ class DockerValidator:
 
         # Write updated package.json
         updated_json = json.dumps(package_data, indent=2)
-        container.exec_run(f'sh -c "echo {repr(updated_json)} > /app/package.json"')
+
+        # Write the JSON to a temp file in container, then move it
+        # This avoids shell escaping issues
+        import base64
+        encoded_json = base64.b64encode(updated_json.encode()).decode()
+
+        container.exec_run(f'sh -c "echo {encoded_json} | base64 -d > /app/package.json"')
 
         self.logger.info("package_json_updated", dependencies=len(package_data.get("dependencies", {})))
 
@@ -448,6 +484,10 @@ class DockerValidator:
 
     def cleanup_all(self):
         """Stop and remove all containers created by this validator."""
+        if not self.cleanup_containers:
+            self.logger.info("container_cleanup_disabled", count=len(self.containers))
+            return
+
         self.logger.info("cleaning_up_all_containers", count=len(self.containers))
 
         for container in list(self.containers):

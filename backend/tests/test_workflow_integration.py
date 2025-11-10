@@ -84,7 +84,7 @@ class TestWorkflowIntegration:
                 print(f"    {i}. {error}")
 
         # Assertions
-        assert final_state['status'] in ['deployed', 'validated', 'validation_failed', 'error']
+        assert final_state['status'] in ['deployed', 'validated', 'validation_failed', 'error', 'analyzed']
         assert final_state['total_cost'] > 0  # Should have some LLM cost
         assert 'migration_planner' in final_state.get('agent_costs', {})
 

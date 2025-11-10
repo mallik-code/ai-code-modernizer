@@ -89,12 +89,23 @@ def runtime_validator_node(state: MigrationState) -> MigrationState:
         # Execute validation
         result = agent.execute({
             "project_path": state["project_path"],
+            "project_type": state.get("project_type", "nodejs"),
             "migration_plan": state.get("migration_plan")
         })
 
         # Update state
         state["validation_result"] = result
-        state["validation_success"] = result.get("status") == "success" and result.get("overall_assessment") == "proceed"
+
+        # Extract nested validation result for easier access
+        validation_data = result.get("validation_result", {})
+        analysis_data = result.get("analysis", {})
+
+        # Check validation success based on actual Docker validation results
+        state["validation_success"] = (
+            result.get("status") == "success" and
+            validation_data.get("status") == "success" and
+            analysis_data.get("recommendation") == "proceed"
+        )
 
         if state["validation_success"]:
             state["status"] = "validated"
@@ -102,9 +113,9 @@ def runtime_validator_node(state: MigrationState) -> MigrationState:
         else:
             state["status"] = "validation_failed"
             logger.warning("validation_failed",
-                          build=result.get("build_success"),
-                          install=result.get("install_success"),
-                          runtime=result.get("runtime_success"))
+                          build=validation_data.get("build_success"),
+                          install=validation_data.get("install_success"),
+                          runtime=validation_data.get("runtime_success"))
 
         # Track cost
         if "cost_report" in result:

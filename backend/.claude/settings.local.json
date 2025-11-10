@@ -6,7 +6,22 @@
       "Bash(\".venv/Scripts/python.exe\" -m graph.state)",
       "Bash(\".venv/Scripts/python.exe\" -m graph.workflow)",
       "Bash(\".venv/Scripts/python.exe\" -m pytest tests/test_workflow.py -v)",
-      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/test_workflow_integration.py::TestWorkflowIntegration::test_workflow_with_mocked_agents -v -s)"
+      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/test_workflow_integration.py::TestWorkflowIntegration::test_workflow_with_mocked_agents -v -s)",
+      "Bash(\".venv/Scripts/python.exe\" -m pytest:*)",
+      "Bash(\".venv/Scripts/python.exe\" -m pytest tests/test_workflow.py tests/test_workflow_integration.py -v)",
+      "Bash(git rm:*)",
+      "Bash(\".venv/Scripts/python.exe\" -m graph.workflow \"tmp/projects/simple_express_app\" nodejs)",
+      "Bash(\".venv/Scripts/python.exe\" test_simple_express.py)",
+      "Bash(cat:*)",
+      "Bash(\".venv/Scripts/python.exe\":*)",
+      "Bash(docker ps:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker logs:*)",
+      "Bash(chmod:*)",
+      "Bash(bash test_container_app.sh:*)",
+      "Bash(\".venv/Scripts/python.exe\" utils/report_generator.py)",
+      "Bash(docker rm:*)",
+      "Bash(\".venv/Scripts/python.exe\" test_docker_upgrade.py)"
     ],
     "deny": [],
     "ask": []

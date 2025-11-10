@@ -58,3 +58,7 @@ nul
 ../nul
 ../.nul
 ../frontend/
+
+# Outdated documentation (consolidated into DEVELOPMENT_PLAN.md)
+docs/MCP_IMPLEMENTATION.md
+DEVELOPMENT_PLAN_STATUS.md
