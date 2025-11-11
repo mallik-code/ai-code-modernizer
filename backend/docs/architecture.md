@@ -16,6 +16,8 @@
 6. [Integration Architecture](#integration-architecture)
 7. [Security Architecture](#security-architecture)
 8. [Scalability Architecture](#scalability-architecture)
+9. [MCP Tools Summary](#mcp-tools-summary)
+10. [Implementation Progress](#implementation-progress)
 
 ---
 
@@ -202,7 +204,7 @@ WS   /ws/{client_id}
 
 #### 4B: Tool Integration (`tools/`)
 
-**Responsibility**: External tool access
+**Responsibility**: External tool access via Model Context Protocol (MCP)
 
 **Components**:
 - ✅ MCP Tool Manager (`mcp_tools.py`) - Phase 2 (75% complete)
@@ -210,18 +212,158 @@ WS   /ws/{client_id}
 - ❌ Web Search Tool (future)
 
 **Technology**:
-- Model Context Protocol (MCP)
+- Model Context Protocol (MCP) - JSON-RPC 2.0 over STDIO
 - Docker SDK for Python
 - subprocess (for MCP servers)
+- Node.js (for MCP servers)
 
-**MCP Servers**:
-- GitHub (`@modelcontextprotocol/server-github`)
-- Filesystem (`@modelcontextprotocol/server-filesystem`)
+### MCP (Model Context Protocol) Integration
+
+**MCP** is a standardized protocol that allows AI agents to securely access external systems through JSON-RPC 2.0 communication over STDIO. This project uses MCP to provide agents with capabilities like GitHub operations and filesystem access.
+
+#### MCP Servers Used
+
+##### 1. GitHub MCP Server (`@modelcontextprotocol/server-github`)
+
+**Purpose**: GitHub repository operations
+
+**Capabilities**:
+- `github_get_file` - Read repository files
+- `github_create_pr` - Create pull requests
+- `github_create_branch` - Create branches
+- `github_push_files` - Push files to repository
+- `github_list_repos` - List repositories
+- `github_search_issues` - Search for similar issues
+
+**Used By**:
+- **Migration Planner** - Read `package.json`, `requirements.txt` from repositories
+- **Staging Deployer** - Create branches, commit changes, create pull requests
+- **Error Analyzer** - Search for similar issues on GitHub
+
+**Configuration** (in `mcp_config.json`):
+```json
+{
+  "github": {
+    "command": "npx.cmd",
+    "args": ["@modelcontextprotocol/server-github"],
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+    }
+  }
+}
+```
+
+**Environment Variables Required**:
+- `GITHUB_TOKEN` - Personal access token with `repo` and `workflow` scopes
+
+##### 2. Filesystem MCP Server (`@modelcontextprotocol/server-filesystem`)
+
+**Purpose**: Local file system operations
+
+**Capabilities**:
+- `read_file` - Read local files
+- `write_file` - Write local files
+- `list_directory` - List directories
+- `delete_file` - Delete files
+- `get_file_info` - Get file metadata
+
+**Used By**:
+- **Migration Planner** - Read local `package.json`, `requirements.txt`
+- **All Agents** - Read configuration files, project files
+
+**Configuration** (in `mcp_config.json`):
+```json
+{
+  "filesystem": {
+    "command": "npx.cmd",
+    "args": ["@modelcontextprotocol/server-filesystem", "."]
+  }
+}
+```
+
+**Note**: The last argument (`.`) specifies the allowed directory root.
+
+#### MCP Tool Manager (`tools/mcp_tools.py`)
+
+**Location**: `backend/tools/mcp_tools.py`
+
+**Key Methods**:
+
+```python
+class MCPToolManager:
+    def __init__(self, config_path: str = "mcp_config.json"):
+        """Initialize MCP tool manager with configuration."""
+
+    async def connect(self):
+        """Establish connections to all MCP servers."""
+
+    def read_file(self, path: str) -> str:
+        """Read file via filesystem MCP server."""
+
+    def write_file(self, path: str, content: str) -> bool:
+        """Write file via filesystem MCP server."""
+
+    def github_get_file(self, owner: str, repo: str, path: str) -> str:
+        """Get file from GitHub repository."""
+
+    def github_create_pr(self, owner: str, repo: str, title: str,
+                         body: str, head: str, base: str) -> str:
+        """Create GitHub pull request. Returns PR URL."""
+
+    def github_create_branch(self, owner: str, repo: str,
+                            branch: str, from_branch: str = "main") -> bool:
+        """Create new Git branch."""
+
+    def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """Generic tool invocation - routes to appropriate MCP server."""
+```
+
+**Example Usage**:
+```python
+from tools.mcp_tools import MCPToolManager
+
+# Initialize
+tools = MCPToolManager()
+
+# Read local file
+content = tools.read_file("package.json")
+
+# Read from GitHub
+gh_content = tools.github_get_file("owner", "repo", "path/to/file")
+
+# Create PR
+pr_url = tools.github_create_pr(
+    owner="owner",
+    repo="repo",
+    title="Upgrade dependencies",
+    body="Automated upgrade via AI Code Modernizer",
+    head="upgrade-branch",
+    base="main"
+)
+
+# Generic tool call
+result = tools.call_tool("read_file", {"path": "package.json"})
+```
+
+#### Installing MCP Servers
+
+```bash
+# Install GitHub MCP server globally
+npm install -g @modelcontextprotocol/server-github
+
+# Install Filesystem MCP server globally
+npm install -g @modelcontextprotocol/server-filesystem
+
+# Test MCP connectivity
+cd backend
+python tools/mcp_tools.py
+```
 
 **Key Patterns**:
-- **Facade Pattern**: Simplified tool interface
-- **Proxy Pattern**: MCP as proxy to external services
-- **Adapter Pattern**: Convert MCP protocol to Python
+- **Facade Pattern**: Simplified tool interface via MCPToolManager
+- **Proxy Pattern**: MCP servers proxy to external services (GitHub API, filesystem)
+- **Adapter Pattern**: Convert JSON-RPC 2.0 protocol to Python methods
+- **Process Isolation**: Each MCP server runs as separate subprocess
 
 **Current Status**: ✅ **PHASE 2 COMPLETE** (75%)
 - ✅ JSON-RPC 2.0 communication with MCP servers
@@ -361,43 +503,81 @@ WS   /ws/{client_id}
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      Agent                               │
+│            AI Agents (Python)                            │
+│  • Migration Planner Agent                               │
+│  • Runtime Validator Agent                               │
+│  • Error Analyzer Agent                                  │
+│  • Staging Deployer Agent                                │
+│                                                           │
 │  agent.use_tool("read_file", {"path": "package.json"})   │
 └─────────────────────────────────────────────────────────┘
                            ↓
 ┌─────────────────────────────────────────────────────────┐
-│                  MCPToolManager                          │
+│          MCPToolManager (Python)                         │
 │  ┌───────────────────────────────────────────────────┐  │
 │  │ call_tool(tool_name, arguments)                   │  │
 │  │   1. Find server that owns tool                   │  │
-│  │   2. Send JSON-RPC request                        │  │
-│  │   3. Read JSON-RPC response                       │  │
-│  │   4. Return result                                │  │
+│  │   2. Send JSON-RPC request via STDIN              │  │
+│  │   3. Read JSON-RPC response from STDOUT           │  │
+│  │   4. Parse and return result                      │  │
 │  └───────────────────────────────────────────────────┘  │
+│                                                           │
+│  • Server lifecycle management (start/stop)              │
+│  • Tool discovery and registry                           │
+│  • Request/response parsing                              │
+│  • Error handling and fallbacks                          │
 └─────────────────────────────────────────────────────────┘
                            ↓
          ┌─────────────────┴─────────────────┐
          ↓                                    ↓
 ┌──────────────────────────┐    ┌──────────────────────────┐
 │    GitHub MCP Server     │    │  Filesystem MCP Server   │
-│  (subprocess, STDIO)     │    │   (subprocess, STDIO)    │
+│  (Node.js subprocess)    │    │  (Node.js subprocess)    │
+│  Communication: STDIO    │    │  Communication: STDIO    │
 ├──────────────────────────┤    ├──────────────────────────┤
-│ Tools:                   │    │ Tools:                   │
+│ Tools Available:         │    │ Tools Available:         │
 │ • github_get_file        │    │ • read_file              │
 │ • github_create_pr       │    │ • write_file             │
 │ • github_list_repos      │    │ • list_directory         │
 │ • github_create_branch   │    │ • delete_file            │
+│ • github_push_files      │    │ • get_file_info          │
+│ • github_search_issues   │    │                          │
 └──────────────────────────┘    └──────────────────────────┘
          ↓                                    ↓
 ┌──────────────────────────┐    ┌──────────────────────────┐
-│     GitHub API           │    │    Local Filesystem      │
+│     GitHub REST API      │    │    Local Filesystem      │
+│  • api.github.com        │    │  • Direct file I/O       │
+│  • Requires GITHUB_TOKEN │    │  • Sandboxed to root dir │
 └──────────────────────────┘    └──────────────────────────┘
 ```
 
 **Communication Protocol** (JSON-RPC 2.0 over STDIO):
 
 ```json
-// Request (sent to MCP server stdin)
+// 1. Initialize handshake (on server start)
+{
+  "jsonrpc": "2.0",
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "ai-code-modernizer",
+      "version": "1.0.0"
+    }
+  },
+  "id": "init-1"
+}
+
+// 2. Discover available tools
+{
+  "jsonrpc": "2.0",
+  "method": "tools/list",
+  "params": {},
+  "id": "list-1"
+}
+
+// 3. Tool invocation (sent to MCP server stdin)
 {
   "jsonrpc": "2.0",
   "method": "tools/call",
@@ -408,21 +588,76 @@ WS   /ws/{client_id}
   "id": "req-123"
 }
 
-// Response (read from MCP server stdout)
+// 4. Tool response (read from MCP server stdout)
 {
   "jsonrpc": "2.0",
   "result": {
-    "content": "{\"name\": \"my-app\", ...}"
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"name\": \"my-app\", \"version\": \"1.0.0\", ...}"
+      }
+    ]
+  },
+  "id": "req-123"
+}
+
+// 5. Error response (on failure)
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32602,
+    "message": "File not found: package.json"
   },
   "id": "req-123"
 }
 ```
 
+**MCP Server Lifecycle**:
+
+```python
+# 1. Server Initialization (on MCPToolManager creation)
+process = subprocess.Popen(
+    ["npx.cmd", "@modelcontextprotocol/server-github"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    env={"GITHUB_PERSONAL_ACCESS_TOKEN": os.getenv("GITHUB_TOKEN")}
+)
+
+# 2. Handshake
+send_json_rpc(process, "initialize", {...})
+response = read_json_rpc(process)
+
+# 3. Tool Discovery
+send_json_rpc(process, "tools/list", {})
+tools = read_json_rpc(process)  # Returns list of available tools
+
+# 4. Tool Invocations (during agent execution)
+send_json_rpc(process, "tools/call", {"name": "read_file", "arguments": {...}})
+result = read_json_rpc(process)
+
+# 5. Cleanup (on exit)
+process.terminate()
+```
+
+**Agent-Specific MCP Usage**:
+
+| Agent | MCP Tools Used | Purpose |
+|-------|----------------|---------|
+| **Migration Planner** | `read_file` (filesystem)<br>`github_get_file` (GitHub) | Read `package.json`, `requirements.txt` from local or GitHub repos |
+| **Runtime Validator** | None (uses Docker SDK directly) | Validates in isolated containers |
+| **Error Analyzer** | `github_search_issues` (GitHub) | Search for similar error reports |
+| **Staging Deployer** | `github_create_branch` (GitHub)<br>`github_push_files` (GitHub)<br>`github_create_pr` (GitHub) | Create upgrade branch, commit changes, open PR |
+
 **Design Highlights**:
-- **Facade**: MCPToolManager hides complexity
-- **Proxy**: MCP servers proxy to external services
-- **Process Isolation**: Each MCP server = separate process
-- **Standardization**: JSON-RPC 2.0 protocol
+- **Facade**: MCPToolManager hides complexity from agents
+- **Proxy**: MCP servers proxy to external services (GitHub API, filesystem)
+- **Process Isolation**: Each MCP server = separate Node.js subprocess
+- **Standardization**: JSON-RPC 2.0 protocol ensures interoperability
+- **Async Communication**: Non-blocking I/O with subprocesses
+- **Error Recovery**: Fallback implementations for critical tools
+- **Security**: GitHub token passed via environment, not exposed in code
 
 ---
 
@@ -704,27 +939,113 @@ BaseLLMClient Interface
 ### GitHub Integration (via MCP)
 
 ```
-Agent (use_tool)
+┌─────────────────────────────────────────────────────────┐
+│          AI Agents (Python)                              │
+│  agent.use_tool("github_create_pr", {...})               │
+└─────────────────────────────────────────────────────────┘
     ↓
-MCPToolManager
+┌─────────────────────────────────────────────────────────┐
+│          MCPToolManager (Python)                         │
+│  • Routes tool call to GitHub MCP server                 │
+│  • Formats JSON-RPC request                              │
+│  • Handles authentication (GITHUB_TOKEN)                 │
+└─────────────────────────────────────────────────────────┘
+    ↓ JSON-RPC over STDIN/STDOUT
+┌─────────────────────────────────────────────────────────┐
+│    GitHub MCP Server (Node.js subprocess)                │
+│  @modelcontextprotocol/server-github                     │
+│  • Parses JSON-RPC requests                              │
+│  • Executes GitHub operations                            │
+│  • Returns results as JSON-RPC responses                 │
+└─────────────────────────────────────────────────────────┘
+    ↓ HTTPS
+┌─────────────────────────────────────────────────────────┐
+│          GitHub REST API (v3)                            │
+│  https://api.github.com                                  │
+│  • Authenticated via Personal Access Token               │
+│  • Operations: repos, branches, commits, PRs, issues     │
+└─────────────────────────────────────────────────────────┘
     ↓
-GitHub MCP Server (subprocess)
-    ↓ JSON-RPC over STDIO
-GitHub MCP Server Implementation
-    ↓
-Octokit/PyGithub
-    ↓
-GitHub REST API v3
-    ↓
-GitHub.com
+┌─────────────────────────────────────────────────────────┐
+│          GitHub.com                                      │
+│  • User's repositories                                   │
+│  • Pull requests                                         │
+│  • CI/CD workflows                                       │
+└─────────────────────────────────────────────────────────┘
 ```
 
-**Operations**:
-- Read repository files
-- Create branches
-- Commit changes
-- Create pull requests
-- Trigger workflows
+**GitHub MCP Server Operations**:
+
+| Tool | Description | Used By | Example |
+|------|-------------|---------|---------|
+| `github_get_file` | Read file from repository | Migration Planner | Read `package.json` from GitHub repo |
+| `github_create_branch` | Create new branch | Staging Deployer | Create `upgrade/dependencies-20250110` |
+| `github_push_files` | Commit and push files | Staging Deployer | Push updated `package.json` |
+| `github_create_pr` | Create pull request | Staging Deployer | Open PR with upgrade changes |
+| `github_list_repos` | List user repositories | Future features | Browse available projects |
+| `github_search_issues` | Search issues | Error Analyzer | Find similar error reports |
+
+**Example Usage Flow**:
+
+```python
+# 1. Staging Deployer creates branch
+tools.github_create_branch(
+    owner="user",
+    repo="my-app",
+    branch="upgrade/dependencies-20250110",
+    from_branch="main"
+)
+
+# 2. Push upgraded files
+tools.github_push_files(
+    owner="user",
+    repo="my-app",
+    branch="upgrade/dependencies-20250110",
+    files={
+        "package.json": updated_package_json,
+        "package-lock.json": updated_package_lock
+    },
+    message="chore: upgrade dependencies\n\n🤖 Generated with AI Code Modernizer"
+)
+
+# 3. Create pull request
+pr_url = tools.github_create_pr(
+    owner="user",
+    repo="my-app",
+    title="Upgrade dependencies to latest versions",
+    body="""## Summary
+- express: 4.16.0 → 4.19.2
+- body-parser: 1.18.3 → 1.20.2
+- cors: 2.8.4 → 2.8.5
+
+## Validation
+✅ Build successful
+✅ Install successful
+✅ Runtime successful
+✅ Health check passed
+
+🤖 Generated with AI Code Modernizer""",
+    head="upgrade/dependencies-20250110",
+    base="main"
+)
+
+print(f"PR created: {pr_url}")
+```
+
+**Authentication**:
+```bash
+# Generate Personal Access Token at: https://github.com/settings/tokens
+# Scopes required: repo, workflow
+
+# Add to .env file
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxx
+```
+
+**Security Features**:
+- Token passed via environment variable (never hardcoded)
+- Token not logged or exposed in responses
+- MCP server runs in isolated subprocess
+- Operations limited to user's accessible repositories
 
 ---
 
@@ -915,6 +1236,182 @@ Containers (isolated environments)
 
 - **LangSmith**: Agent execution tracing
 - **OpenTelemetry**: Distributed tracing
+
+---
+
+## MCP Tools Summary
+
+This project uses **Model Context Protocol (MCP)** to provide AI agents with standardized access to external tools and services. MCP is a JSON-RPC 2.0 protocol over STDIO that enables secure, sandboxed communication between agents and external systems.
+
+### MCP Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  AI Agents                               │
+│  Migration Planner | Validator | Analyzer | Deployer    │
+└─────────────────────────────────────────────────────────┘
+                     ↓ Python API
+┌─────────────────────────────────────────────────────────┐
+│              MCPToolManager (Python)                     │
+│  • Lifecycle: Start/stop MCP server subprocesses         │
+│  • Communication: JSON-RPC 2.0 over STDIN/STDOUT         │
+│  • Discovery: Dynamic tool listing                       │
+│  • Routing: Tool name → appropriate server               │
+└─────────────────────────────────────────────────────────┘
+                     ↓ JSON-RPC 2.0
+         ┌───────────┴───────────┐
+         ↓                       ↓
+┌──────────────────┐    ┌──────────────────┐
+│  GitHub MCP      │    │ Filesystem MCP   │
+│  Server          │    │ Server           │
+│  (Node.js)       │    │ (Node.js)        │
+└──────────────────┘    └──────────────────┘
+         ↓                       ↓
+┌──────────────────┐    ┌──────────────────┐
+│  GitHub API      │    │ Local FS         │
+└──────────────────┘    └──────────────────┘
+```
+
+### MCP Servers in Use
+
+#### 1. GitHub MCP Server
+**NPM Package**: `@modelcontextprotocol/server-github`
+**Purpose**: GitHub repository operations
+**Installation**: `npm install -g @modelcontextprotocol/server-github`
+
+**Available Tools**:
+- `github_get_file` - Read files from repositories
+- `github_create_branch` - Create Git branches
+- `github_push_files` - Commit and push changes
+- `github_create_pr` - Create pull requests
+- `github_list_repos` - List accessible repositories
+- `github_search_issues` - Search for issues
+
+**Environment Variables**: `GITHUB_TOKEN` (Personal Access Token with `repo` + `workflow` scopes)
+
+#### 2. Filesystem MCP Server
+**NPM Package**: `@modelcontextprotocol/server-filesystem`
+**Purpose**: Local file system operations
+**Installation**: `npm install -g @modelcontextprotocol/server-filesystem`
+
+**Available Tools**:
+- `read_file` - Read local files
+- `write_file` - Write local files
+- `list_directory` - List directory contents
+- `delete_file` - Delete files
+- `get_file_info` - Get file metadata
+
+**Configuration**: Last argument specifies allowed directory root (e.g., `.` for current directory)
+
+### Agent → MCP Tool Mapping
+
+| Agent | Tools Used | Purpose |
+|-------|------------|---------|
+| **Migration Planner** | `read_file` (filesystem)<br>`github_get_file` (GitHub) | Read `package.json`, `requirements.txt` from local or remote repos |
+| **Runtime Validator** | None | Uses Docker SDK directly for container validation |
+| **Error Analyzer** | `github_search_issues` (GitHub) | Search for similar error reports and solutions |
+| **Staging Deployer** | `github_create_branch` (GitHub)<br>`github_push_files` (GitHub)<br>`github_create_pr` (GitHub) | Create upgrade branches, commit changes, open PRs |
+
+### MCP Configuration
+
+**File**: `backend/mcp_config.json`
+
+```json
+{
+  "github": {
+    "command": "npx.cmd",
+    "args": ["@modelcontextprotocol/server-github"],
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+    }
+  },
+  "filesystem": {
+    "command": "npx.cmd",
+    "args": ["@modelcontextprotocol/server-filesystem", "."]
+  }
+}
+```
+
+### MCP Usage Example
+
+```python
+from tools.mcp_tools import MCPToolManager
+
+# Initialize tool manager
+tools = MCPToolManager()
+
+# Read local file
+package_json = tools.read_file("package.json")
+
+# Read from GitHub
+readme = tools.github_get_file(
+    owner="user",
+    repo="my-app",
+    path="README.md"
+)
+
+# Create branch and PR
+tools.github_create_branch(
+    owner="user",
+    repo="my-app",
+    branch="upgrade/dependencies-20250110",
+    from_branch="main"
+)
+
+tools.github_push_files(
+    owner="user",
+    repo="my-app",
+    branch="upgrade/dependencies-20250110",
+    files={"package.json": updated_content},
+    message="chore: upgrade dependencies"
+)
+
+pr_url = tools.github_create_pr(
+    owner="user",
+    repo="my-app",
+    title="Upgrade dependencies",
+    body="Automated upgrade",
+    head="upgrade/dependencies-20250110",
+    base="main"
+)
+```
+
+### MCP Security Features
+
+- **Process Isolation**: Each MCP server runs in separate subprocess
+- **Sandboxing**: Filesystem server restricted to configured root directory
+- **Token Management**: GitHub token passed via environment, never hardcoded
+- **No Logging**: Sensitive data (tokens, file contents) not logged
+- **Least Privilege**: Agents only have access to tools they need
+
+### Testing MCP Tools
+
+```bash
+# Test MCP connectivity and tool discovery
+cd backend
+python tools/mcp_tools.py
+
+# Expected output:
+# ✓ GitHub MCP server connected
+# ✓ Filesystem MCP server connected
+# ✓ Tools discovered: github_get_file, read_file, write_file, ...
+```
+
+### MCP Implementation Status
+
+✅ **Completed**:
+- JSON-RPC 2.0 communication protocol
+- Server lifecycle management (start/stop/restart)
+- Dynamic tool discovery via `tools/list`
+- Tool routing and invocation
+- Error handling and fallbacks
+- GitHub and Filesystem server integration
+
+❌ **Future Enhancements**:
+- Retry logic with exponential backoff
+- Request timeout handling
+- Connection pooling for multiple agents
+- Additional MCP servers (e.g., web search, database)
 
 ---
 

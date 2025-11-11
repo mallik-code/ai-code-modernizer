@@ -119,7 +119,9 @@ Be thorough and prioritize correctness."""
                            build=validation_result["build_success"],
                            install=validation_result["install_success"],
                            runtime=validation_result["runtime_success"],
-                           health_check=validation_result["health_check_success"])
+                           health_check=validation_result["health_check_success"],
+                           tests_run=validation_result["tests_run"],
+                           tests_passed=validation_result["tests_passed"])
 
             # Analyze results with LLM
             analysis = self._analyze_validation_results(validation_result, migration_plan)
@@ -216,6 +218,7 @@ TASKS:
    - Dependency installation
    - Application startup
    - Health checks
+   - Test execution (if tests were found)
 
 3. If validation failed:
    - Identify root cause from error messages
@@ -236,7 +239,9 @@ OUTPUT FORMAT: Return ONLY valid JSON matching this schema:
         "container_created": bool,
         "dependencies_installed": bool,
         "application_started": bool,
-        "health_checks_passed": bool
+        "health_checks_passed": bool,
+        "tests_run": bool,
+        "tests_passed": bool
     },
     "errors": ["list of errors if any"],
     "root_cause": "explanation if failed",
@@ -267,7 +272,9 @@ No markdown, no explanations outside JSON."""
                 "container_created": validation_result.get("build_success", False),
                 "dependencies_installed": validation_result.get("install_success", False),
                 "application_started": validation_result.get("runtime_success", False),
-                "health_checks_passed": validation_result.get("health_check_success", False)
+                "health_checks_passed": validation_result.get("health_check_success", False),
+                "tests_run": validation_result.get("tests_run", False),
+                "tests_passed": validation_result.get("tests_passed", False)
             },
             "errors": validation_result.get("errors", []),
             "root_cause": "See errors list" if not validation_success else "N/A",

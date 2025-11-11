@@ -88,11 +88,25 @@ class DockerValidator:
             {
                 "status": "success" | "error",
                 "container_id": "...",
+                "container_name": "...",
                 "build_success": bool,
                 "install_success": bool,
                 "runtime_success": bool,
                 "health_check_success": bool,
-                "logs": {...},
+                "tests_run": bool,
+                "tests_passed": bool,
+                "logs": {
+                    "install": "...",
+                    "startup": "...",
+                    "health_check": {...},
+                    "tests": {
+                        "success": bool,
+                        "tests_found": bool,
+                        "exit_code": int,
+                        "output": "...",
+                        "test_summary": "..."
+                    }
+                },
                 "errors": [...]
             }
         """
@@ -109,6 +123,8 @@ class DockerValidator:
             "install_success": False,
             "runtime_success": False,
             "health_check_success": False,
+            "tests_run": False,
+            "tests_passed": False,
             "logs": {},
             "errors": []
         }
@@ -148,9 +164,36 @@ class DockerValidator:
             result["logs"]["health_check"] = health_result
             result["health_check_success"] = health_result.get("success", False)
 
+            # Run tests if available
+            test_result = self._run_tests(container, project_type)
+            result["logs"]["tests"] = test_result
+            result["tests_run"] = test_result.get("tests_found", False)
+            result["tests_passed"] = test_result.get("success", False)
+
+            # Determine overall validation status
+            # Validation is successful if:
+            # 1. Health check passed
+            # 2. If tests exist, they must pass
+            # 3. If no tests exist, health check is sufficient
             if result["health_check_success"]:
-                result["status"] = "success"
-                self.logger.info("validation_successful", container_id=result["container_id"])
+                if result["tests_run"]:
+                    # Tests were found and run
+                    if result["tests_passed"]:
+                        result["status"] = "success"
+                        self.logger.info("validation_successful_with_tests",
+                                       container_id=result["container_id"],
+                                       test_summary=test_result.get("test_summary", ""))
+                    else:
+                        result["status"] = "error"
+                        result["errors"].append(f"Tests failed: {test_result.get('test_summary', 'Unknown error')}")
+                        self.logger.error("validation_failed_tests",
+                                        container_id=result["container_id"],
+                                        test_summary=test_result.get("test_summary", ""))
+                else:
+                    # No tests found, health check is sufficient
+                    result["status"] = "success"
+                    self.logger.info("validation_successful_no_tests",
+                                   container_id=result["container_id"])
             else:
                 result["errors"].append("Health check failed")
                 self.logger.warning("health_check_failed", container_id=result["container_id"])
@@ -365,7 +408,8 @@ class DockerValidator:
             Installation output
         """
         if project_type == "nodejs":
-            cmd = "npm install --production"
+            # Install all dependencies including devDependencies (for tests)
+            cmd = "npm install"
         elif project_type == "python":
             cmd = "pip install -r requirements.txt"
         else:
@@ -460,6 +504,128 @@ class DockerValidator:
             self.logger.info("process_running_successfully",
                            project_type=project_type,
                            process_count=output_str.count('\n') + 1)
+
+        return result
+
+    def _run_tests(self, container: Container, project_type: str) -> Dict:
+        """Run test suite in container.
+
+        Args:
+            container: Docker container
+            project_type: "nodejs" or "python"
+
+        Returns:
+            Test results dictionary with:
+            {
+                "success": bool,
+                "tests_found": bool,
+                "exit_code": int,
+                "output": str,
+                "test_summary": str
+            }
+        """
+        self.logger.info("running_tests", project_type=project_type)
+
+        result = {
+            "success": False,
+            "tests_found": False,
+            "exit_code": None,
+            "output": "",
+            "test_summary": ""
+        }
+
+        try:
+            # Determine test command based on project type
+            if project_type == "nodejs":
+                # Check if test script exists in package.json
+                exit_code, pkg_output = container.exec_run("cat /app/package.json")
+                if exit_code == 0:
+                    import json
+                    package_data = json.loads(pkg_output.decode())
+                    test_script = package_data.get("scripts", {}).get("test", "")
+
+                    # Skip if no test script or placeholder script
+                    if not test_script or "no test" in test_script.lower() or "exit 0" in test_script:
+                        self.logger.info("no_tests_configured", project_type=project_type)
+                        result["test_summary"] = "No tests configured in package.json"
+                        return result
+
+                    result["tests_found"] = True
+                    cmd = "npm test"
+                else:
+                    self.logger.warning("cannot_read_package_json")
+                    return result
+
+            elif project_type == "python":
+                # Check if pytest or unittest tests exist
+                exit_code, test_check = container.exec_run(
+                    "sh -c 'ls test_*.py tests/ 2>/dev/null || ls *_test.py 2>/dev/null'"
+                )
+
+                if exit_code == 0 and test_check.decode().strip():
+                    result["tests_found"] = True
+                    cmd = "pytest -v || python -m unittest discover"
+                else:
+                    self.logger.info("no_tests_found", project_type=project_type)
+                    result["test_summary"] = "No test files found"
+                    return result
+
+            # Run tests with timeout
+            self.logger.info("executing_tests", command=cmd)
+            exit_code, output = container.exec_run(
+                cmd,
+                workdir="/app",
+                environment={"CI": "true", "NODE_ENV": "test"}
+            )
+
+            output_str = output.decode()
+            result["exit_code"] = exit_code
+            result["output"] = output_str
+            result["success"] = exit_code == 0
+
+            # Extract test summary
+            if project_type == "nodejs":
+                # Look for Jest summary: "Tests: X passed, Y total"
+                import re
+                match = re.search(r'Tests?:\s+(\d+)\s+passed.*?(\d+)\s+total', output_str, re.IGNORECASE)
+                if match:
+                    result["test_summary"] = f"{match.group(1)} passed, {match.group(2)} total"
+                elif exit_code == 0:
+                    result["test_summary"] = "All tests passed"
+                else:
+                    # Look for failure info
+                    fail_match = re.search(r'(\d+)\s+failed', output_str, re.IGNORECASE)
+                    if fail_match:
+                        result["test_summary"] = f"{fail_match.group(1)} tests failed"
+                    else:
+                        result["test_summary"] = "Tests failed"
+
+            elif project_type == "python":
+                # Look for pytest summary
+                import re
+                match = re.search(r'(\d+)\s+passed', output_str)
+                if match:
+                    result["test_summary"] = f"{match.group(1)} passed"
+                elif exit_code == 0:
+                    result["test_summary"] = "All tests passed"
+                else:
+                    result["test_summary"] = "Tests failed"
+
+            # Log results
+            if result["success"]:
+                self.logger.info("tests_passed",
+                               summary=result["test_summary"],
+                               exit_code=exit_code)
+            else:
+                self.logger.error("tests_failed",
+                                summary=result["test_summary"],
+                                exit_code=exit_code,
+                                output_preview=output_str[:500])
+
+        except Exception as e:
+            self.logger.error("test_execution_error", error=str(e), exc_info=True)
+            result["output"] = f"Error running tests: {str(e)}"
+            result["test_summary"] = f"Test execution error: {str(e)}"
 
         return result
 

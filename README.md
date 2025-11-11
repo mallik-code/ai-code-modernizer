@@ -187,34 +187,175 @@ npm test
 - **ReactFlow**: Graph visualization
 - **Zustand**: State management
 
+## 🔧 MCP (Model Context Protocol) Tools
+
+This project uses **MCP servers** to provide AI agents with secure access to external systems through a standardized JSON-RPC protocol.
+
+### MCP Servers Used
+
+#### 1. GitHub MCP Server (`@modelcontextprotocol/server-github`)
+**Purpose**: GitHub repository operations
+
+**Capabilities:**
+- Read repository files
+- Create/update files
+- Create branches
+- Create pull requests
+- Manage issues
+- Read commit history
+
+**Used By:**
+- Migration Planner (read dependency files)
+- Staging Deployer (create branches, PRs)
+- Error Analyzer (search for similar issues)
+
+**Configuration:**
+```json
+{
+  "github": {
+    "command": "npx.cmd",
+    "args": ["@modelcontextprotocol/server-github"],
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+    }
+  }
+}
+```
+
+#### 2. Filesystem MCP Server (`@modelcontextprotocol/server-filesystem`)
+**Purpose**: Local file system operations
+
+**Capabilities:**
+- Read local files
+- Write local files
+- List directories
+- File metadata operations
+
+**Used By:**
+- Migration Planner (read package.json, requirements.txt)
+- All agents (read configuration files)
+
+**Configuration:**
+```json
+{
+  "filesystem": {
+    "command": "npx.cmd",
+    "args": ["@modelcontextprotocol/server-filesystem", "."]
+  }
+}
+```
+
+### MCP Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│           AI Agents (Python)                │
+│  • Migration Planner                        │
+│  • Runtime Validator                        │
+│  • Error Analyzer                           │
+│  • Staging Deployer                         │
+└──────────────────┬──────────────────────────┘
+                   │
+                   ↓ JSON-RPC over STDIO
+┌──────────────────────────────────────────────┐
+│        MCPToolManager (Python)               │
+│  • Server lifecycle management               │
+│  • Tool call routing                         │
+│  • Response parsing                          │
+└──────────────────┬───────────────────────────┘
+                   │
+        ┌──────────┴──────────┐
+        ↓                     ↓
+┌──────────────┐      ┌──────────────┐
+│ GitHub MCP   │      │ Filesystem   │
+│ Server       │      │ MCP Server   │
+│ (Node.js)    │      │ (Node.js)    │
+└──────┬───────┘      └──────┬───────┘
+       │                     │
+       ↓                     ↓
+┌──────────────┐      ┌──────────────┐
+│ GitHub API   │      │ Local FS     │
+└──────────────┘      └──────────────┘
+```
+
+### Installing MCP Servers
+
+```bash
+# Install GitHub MCP server
+npm install -g @modelcontextprotocol/server-github
+
+# Install Filesystem MCP server
+npm install -g @modelcontextprotocol/server-filesystem
+
+# Test MCP connectivity
+cd backend
+python tools/mcp_tools.py
+```
+
+### MCP Tool Manager
+
+Location: `backend/tools/mcp_tools.py`
+
+**Key Methods:**
+- `connect()` - Establish connections to MCP servers
+- `read_file(path)` - Read files via filesystem server
+- `write_file(path, content)` - Write files via filesystem server
+- `github_get_file(owner, repo, path)` - Get file from GitHub
+- `github_create_pr(...)` - Create pull request
+- `call_tool(tool_name, args)` - Generic tool invocation
+
+**Example Usage:**
+```python
+from tools.mcp_tools import MCPToolManager
+
+# Initialize
+tools = MCPToolManager()
+
+# Read local file
+content = tools.read_file("package.json")
+
+# Read from GitHub
+gh_content = tools.github_get_file("owner", "repo", "path/to/file")
+
+# Create PR
+pr_url = tools.github_create_pr(
+    owner="owner",
+    repo="repo",
+    title="Upgrade dependencies",
+    body="Automated upgrade",
+    head="upgrade-branch",
+    base="main"
+)
+```
+
 ## 🎭 Agents
 
 ### 1. Migration Planner Agent
 - Analyzes codebase dependencies
 - Researches breaking changes
 - Creates phased migration strategies
-- Tools: MCP (GitHub, Filesystem), Web Search
+- **Tools**: MCP (GitHub, Filesystem), LLM reasoning
 
 ### 2. Runtime Validator Agent
 - Creates isolated Docker environments
 - Applies upgrades safely
 - Runs application and tests
 - Validates critical flows
-- Tools: Docker SDK, API Tester
+- **Tools**: Docker SDK, MCPToolManager
 
 ### 3. Error Analysis Agent
 - Diagnoses validation failures
 - Researches similar issues
 - Generates fixes automatically
 - Suggests alternative strategies
-- Tools: MCP, Web Search, Log Analyzer
+- **Tools**: MCP (GitHub), LLM reasoning
 
 ### 4. Staging Deployment Agent
 - Creates feature branches
 - Pushes validated changes
 - Creates pull requests
 - Triggers CI/CD pipelines
-- Tools: MCP (GitHub), CI/CD APIs
+- **Tools**: MCP (GitHub), Git commands
 
 ## 🔄 Workflow
 
