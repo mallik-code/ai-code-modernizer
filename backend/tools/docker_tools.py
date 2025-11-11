@@ -227,9 +227,13 @@ class DockerValidator:
         if project_type == "nodejs":
             image_name = "node:18-alpine"
             working_dir = "/app"
+            # Default port for Node.js apps (Express, etc.)
+            app_port = 3000
         elif project_type == "python":
             image_name = "python:3.11-slim"
             working_dir = "/app"
+            # Default port for Python apps (Flask, FastAPI, etc.)
+            app_port = 5000
         else:
             raise ValueError(f"Unsupported project type: {project_type}")
 
@@ -254,17 +258,21 @@ class DockerValidator:
         except Exception:
             pass  # Container doesn't exist, which is fine
 
-        # Create container
+        # Create container with port mapping for browser access
         container = self.client.containers.create(
             image=image_name,
             name=container_name,
             command="tail -f /dev/null",  # Keep container running
             working_dir=working_dir,
             detach=True,
-            network_mode="bridge"
+            network_mode="bridge",
+            ports={f'{app_port}/tcp': app_port}  # Map container port to host port
         )
 
-        self.logger.info("container_created_with_name", container_id=container.id[:12], name=container_name)
+        self.logger.info("container_created_with_port_mapping",
+                        container_id=container.id[:12],
+                        name=container_name,
+                        port=app_port)
         container.start()
         self.containers.append(container)
 
