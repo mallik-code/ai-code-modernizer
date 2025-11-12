@@ -17,6 +17,7 @@ class MigrationState(TypedDict, total=False):
     Attributes:
         project_path: Absolute path to the project being analyzed
         project_type: Type of project (nodejs, python)
+        github_token: GitHub Personal Access Token for API operations (optional)
 
         # Migration Planning
         dependency_file_content: Raw content of package.json or requirements.txt
@@ -50,6 +51,8 @@ class MigrationState(TypedDict, total=False):
     # Project information
     project_path: str
     project_type: str
+    github_token: Optional[str]
+    is_git_cloned_repo: bool
 
     # Migration Planning
     dependency_file_content: str
@@ -80,13 +83,15 @@ class MigrationState(TypedDict, total=False):
     agent_costs: Dict[str, float]
 
 
-def create_initial_state(project_path: str, project_type: str = "nodejs", max_retries: int = 3) -> MigrationState:
+def create_initial_state(project_path: str, project_type: str = "nodejs", max_retries: int = 3, github_token: Optional[str] = None, is_git_cloned_repo: bool = False) -> MigrationState:
     """Create initial state for workflow.
 
     Args:
         project_path: Path to project
         project_type: Type of project (nodejs, python)
         max_retries: Maximum retry attempts
+        github_token: GitHub Personal Access Token for API operations (optional)
+        is_git_cloned_repo: Whether the project was cloned from a Git repository
 
     Returns:
         Initial state dictionary
@@ -94,6 +99,8 @@ def create_initial_state(project_path: str, project_type: str = "nodejs", max_re
     return MigrationState(
         project_path=project_path,
         project_type=project_type,
+        github_token=github_token,
+        is_git_cloned_repo=is_git_cloned_repo,
         dependency_file_content="",
         migration_plan=None,
         validation_result=None,

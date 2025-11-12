@@ -308,16 +308,29 @@ class MCPToolManager:
             "path": path
         })
 
-    def github_create_pr(self, owner: str, repo: str, title: str, body: str, head: str, base: str):
-        """Create a GitHub pull request"""
-        return self.call_tool("github_create_pr", {
+    def github_create_pr(self, owner: str, repo: str, title: str, body: str, head: str, base: str, token: Optional[str] = None):
+        """Create a GitHub pull request
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            title: PR title
+            body: PR description
+            head: Source branch
+            base: Target branch
+            token: GitHub Personal Access Token (optional)
+        """
+        args = {
             "owner": owner,
             "repo": repo,
             "title": title,
             "body": body,
             "head": head,
             "base": base
-        })
+        }
+        if token:
+            args["token"] = token
+        return self.call_tool("github_create_pr", args)
 
     # Filesystem tools (direct implementation)
     def read_file(self, path: str) -> str:

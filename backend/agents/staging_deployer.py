@@ -80,6 +80,7 @@ Be thorough, safe, and provide clear guidance."""
                 - project_path: Path to project directory
                 - migration_plan: Migration plan to deploy
                 - validation_result: Results from runtime validation
+                - github_token: GitHub Personal Access Token for API operations (optional)
                 - base_branch: Base branch name (default: "main")
                 - create_pr: Whether to create PR (default: True)
 
@@ -90,6 +91,8 @@ Be thorough, safe, and provide clear guidance."""
             project_path = input_data.get("project_path")
             migration_plan = input_data.get("migration_plan")
             validation_result = input_data.get("validation_result")
+            github_token = input_data.get("github_token")
+            is_git_cloned_repo = input_data.get("is_git_cloned_repo", False)
             base_branch = input_data.get("base_branch", "main")
             create_pr = input_data.get("create_pr", True)
 
@@ -108,7 +111,8 @@ Be thorough, safe, and provide clear guidance."""
             self.logger.info("starting_staging_deployment",
                            project_path=project_path,
                            base_branch=base_branch,
-                           create_pr=create_pr)
+                           create_pr=create_pr,
+                           has_github_token=bool(github_token))
 
             # Change to project directory
             project_dir = Path(project_path)
@@ -140,7 +144,7 @@ Be thorough, safe, and provide clear guidance."""
                 return commit_result
 
             # Push branch
-            push_result = self._push_branch(project_dir, branch_name)
+            push_result = self._push_branch(project_dir, branch_name, github_token, is_git_cloned_repo)
             if "error" in push_result:
                 return push_result
 
@@ -152,7 +156,8 @@ Be thorough, safe, and provide clear guidance."""
                     project_dir,
                     branch_name,
                     base_branch,
-                    pr_description
+                    pr_description,
+                    github_token
                 )
 
             # Log cost
@@ -460,27 +465,109 @@ Be thorough, safe, and provide clear guidance."""
                 "error": f"Failed to commit changes: {e.stderr}"
             }
 
-    def _push_branch(self, project_dir: Path, branch_name: str) -> Dict:
-        """Push branch to remote.
+    def _push_branch(self, project_dir: Path, branch_name: str, github_token: Optional[str] = None, is_git_cloned_repo: bool = False) -> Dict:
+        """Push branch to remote with optional authentication.
 
         Args:
             project_dir: Project directory
             branch_name: Branch name
+            github_token: GitHub Personal Access Token for authentication (optional)
+            is_git_cloned_repo: Whether this repo was cloned from a Git repository
 
         Returns:
             Result dictionary
         """
         try:
-            subprocess.run(
-                ["git", "push", "-u", "origin", branch_name],
-                cwd=project_dir,
-                check=True,
-                capture_output=True,
-                text=True
-            )
+            import os
 
-            self.logger.info("branch_pushed", branch=branch_name)
-            return {"status": "success"}
+            # Use provided token or fall back to environment variable
+            token_to_use = github_token or os.getenv("GITHUB_TOKEN")
+
+            # For local repos that aren't Git clones, use simple push unless token is explicitly provided
+            if not is_git_cloned_repo and not token_to_use:
+                # Use simple push for local repos without authentication
+                subprocess.run(
+                    ["git", "push", "-u", "origin", branch_name],
+                    cwd=project_dir,
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                self.logger.info("branch_pushed", branch=branch_name)
+                return {"status": "success"}
+
+            # For Git-cloned repos or when token is provided, use authentication logic
+            if token_to_use:
+                # Get current remote URL
+                result = subprocess.run(
+                    ["git", "remote", "get-url", "origin"],
+                    cwd=project_dir,
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                original_url = result.stdout.strip()
+
+                # Check if this is a GitHub HTTPS URL that needs authentication
+                if original_url.startswith("https://github.com/"):
+                    # Add token to URL: https://token@github.com/user/repo.git
+                    auth_url = original_url.replace("https://", f"https://{token_to_use}@")
+
+                    subprocess.run(
+                        ["git", "remote", "set-url", "origin", auth_url],
+                        cwd=project_dir,
+                        check=True,
+                        capture_output=True,
+                        text=True
+                    )
+
+                    try:
+                        # Push with authentication
+                        subprocess.run(
+                            ["git", "push", "-u", "origin", branch_name],
+                            cwd=project_dir,
+                            check=True,
+                            capture_output=True,
+                            text=True
+                        )
+
+                        self.logger.info("branch_pushed", branch=branch_name)
+                        return {"status": "success"}
+
+                    finally:
+                        # Restore original URL (remove token)
+                        subprocess.run(
+                            ["git", "remote", "set-url", "origin", original_url],
+                            cwd=project_dir,
+                            capture_output=True,
+                            text=True
+                        )
+                else:
+                    # Non-GitHub URL, push without token modification
+                    subprocess.run(
+                        ["git", "push", "-u", "origin", branch_name],
+                        cwd=project_dir,
+                        check=True,
+                        capture_output=True,
+                        text=True
+                    )
+
+                    self.logger.info("branch_pushed", branch=branch_name)
+                    return {"status": "success"}
+            else:
+                # No token available, try push anyway (may work for public repos or repos with other authentication)
+                self.logger.warning("no_github_token_for_push",
+                                  message="No GitHub token available, push may fail for private repos")
+                subprocess.run(
+                    ["git", "push", "-u", "origin", branch_name],
+                    cwd=project_dir,
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+
+                self.logger.info("branch_pushed", branch=branch_name)
+                return {"status": "success"}
 
         except subprocess.CalledProcessError as e:
             self.logger.error("push_failed", error=e.stderr, branch=branch_name)
@@ -605,15 +692,17 @@ Be thorough, safe, and provide clear guidance."""
         project_dir: Path,
         branch_name: str,
         base_branch: str,
-        description: str
+        description: str,
+        github_token: Optional[str] = None
     ) -> Dict:
-        """Create GitHub Pull Request via MCP.
+        """Create GitHub Pull Request via MCP or GitHub API.
 
         Args:
             project_dir: Project directory
             branch_name: Source branch
             base_branch: Target branch
             description: PR description
+            github_token: GitHub Personal Access Token for API operations (optional)
 
         Returns:
             Result dictionary with pr_url and pr_number
@@ -650,14 +739,23 @@ Be thorough, safe, and provide clear guidance."""
             else:
                 raise ValueError(f"Not a GitHub repository: {remote_url}")
 
-            # Create PR via MCP GitHub tools
+            # Create PR via MCP GitHub tools or GitHub API
+            # Use provided token if available, otherwise fall back to environment variable
+            import os
+            token_to_use = github_token or os.getenv("GITHUB_TOKEN")
+
+            if not token_to_use:
+                self.logger.warning("no_github_token",
+                                  message="No GitHub token provided, PR creation may fail")
+
             pr_result = self.tools.github_create_pr(
                 owner=owner,
                 repo=repo,
                 title=title,
                 body=description,
                 head=branch_name,
-                base=base_branch
+                base=base_branch,
+                token=token_to_use
             )
 
             self.logger.info("pull_request_created",

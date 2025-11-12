@@ -1,0 +1,374 @@
+{
+	"info": {
+		"_postman_id": "ai-code-modernizer-collection",
+		"name": "AI Code Modernizer API",
+		"description": "Comprehensive API collection for AI-Powered Code Modernization Platform - A multi-agent system that autonomously upgrades code dependencies through intelligent analysis, runtime validation in Docker containers, and staged deployment via GitHub.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "ai-code-modernizer"
+	},
+	"item": [
+		{
+			"name": "Health & Status",
+			"item": [
+				{
+					"name": "Root Endpoint",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								""
+							]
+						},
+						"description": "Get API information and welcome message"
+					},
+					"response": []
+				},
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"health"
+							]
+						},
+						"description": "Check API health status and configuration"
+					},
+					"response": []
+				}
+			],
+			"description": "Health check and root endpoints"
+		},
+		{
+			"name": "Migrations",
+			"item": [
+				{
+					"name": "Start Migration - Local Project",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"project_path\": \"./target_repos/simple_express_app\",\n  \"project_type\": \"nodejs\",\n  \"max_retries\": 3\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/migrations/start",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"migrations",
+								"start"
+							]
+						},
+						"description": "Start a migration workflow using a local project path"
+					},
+					"response": []
+				},
+				{
+					"name": "Start Migration - Git Repo (Public)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"git_repo_url\": \"https://github.com/expressjs/express.git\",\n  \"git_branch\": \"master\",\n  \"project_type\": \"nodejs\",\n  \"max_retries\": 3,\n  \"force_fresh_clone\": false\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/migrations/start",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"migrations",
+								"start"
+							]
+						},
+						"description": "Start a migration workflow by cloning a public Git repository. Uses cached clone if available (force_fresh_clone=false)."
+					},
+					"response": []
+				},
+				{
+					"name": "Start Migration - Git Repo (Private)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"git_repo_url\": \"https://github.com/your-org/your-private-repo.git\",\n  \"git_branch\": \"main\",\n  \"github_token\": \"{{github_token}}\",\n  \"project_type\": \"nodejs\",\n  \"max_retries\": 3,\n  \"force_fresh_clone\": false\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/migrations/start",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"migrations",
+								"start"
+							]
+						},
+						"description": "Start a migration workflow by cloning a private Git repository using GitHub Personal Access Token. Uses cached clone if available (force_fresh_clone=false)."
+					},
+					"response": []
+				},
+				{
+					"name": "Start Migration - Git Repo (Force Fresh Clone)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"git_repo_url\": \"https://github.com/expressjs/express.git\",\n  \"git_branch\": \"master\",\n  \"project_type\": \"nodejs\",\n  \"max_retries\": 3,\n  \"force_fresh_clone\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/migrations/start",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"migrations",
+								"start"
+							]
+						},
+						"description": "Start a migration workflow by cloning a Git repository. Forces a fresh clone by deleting any existing cached copy (force_fresh_clone=true)."
+					},
+					"response": []
+				},
+				{
+					"name": "Start Migration - Python Project",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"project_path\": \"./target_repos/my_python_app\",\n  \"project_type\": \"python\",\n  \"max_retries\": 3\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/migrations/start",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"migrations",
+								"start"
+							]
+						},
+						"description": "Start a migration workflow for a Python project using requirements.txt"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Migration Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/migrations/{{migration_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"migrations",
+								"{{migration_id}}"
+							]
+						},
+						"description": "Get the status and details of a specific migration by ID"
+					},
+					"response": []
+				},
+				{
+					"name": "List All Migrations",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/migrations",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"migrations"
+							]
+						},
+						"description": "Get a list of all migrations with their current status"
+					},
+					"response": []
+				}
+			],
+			"description": "Migration workflow endpoints - start, query, and manage migrations"
+		},
+		{
+			"name": "Reports",
+			"item": [
+				{
+					"name": "Download HTML Report",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/migrations/{{migration_id}}/report?type=html",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"migrations",
+								"{{migration_id}}",
+								"report"
+							],
+							"query": [
+								{
+									"key": "type",
+									"value": "html",
+									"description": "Report format: html, markdown, or json"
+								}
+							]
+						},
+						"description": "Download the migration report in HTML format with comprehensive workflow diagrams, agent execution details, and AI insights"
+					},
+					"response": []
+				},
+				{
+					"name": "Download Markdown Report",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/migrations/{{migration_id}}/report?type=markdown",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"migrations",
+								"{{migration_id}}",
+								"report"
+							],
+							"query": [
+								{
+									"key": "type",
+									"value": "markdown",
+									"description": "Report format: html, markdown, or json"
+								}
+							]
+						},
+						"description": "Download the migration report in Markdown format"
+					},
+					"response": []
+				},
+				{
+					"name": "Download JSON Report",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/migrations/{{migration_id}}/report?type=json",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"migrations",
+								"{{migration_id}}",
+								"report"
+							],
+							"query": [
+								{
+									"key": "type",
+									"value": "json",
+									"description": "Report format: html, markdown, or json"
+								}
+							]
+						},
+						"description": "Download the migration report in JSON format with machine-readable data"
+					},
+					"response": []
+				}
+			],
+			"description": "Report generation and download endpoints"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string",
+			"description": "Base URL for the API (default: http://localhost:8000)"
+		},
+		{
+			"key": "migration_id",
+			"value": "",
+			"type": "string",
+			"description": "Migration ID returned from start migration endpoint. Set this after creating a migration."
+		},
+		{
+			"key": "github_token",
+			"value": "",
+			"type": "string",
+			"description": "GitHub Personal Access Token for private repository access. Get from https://github.com/settings/tokens"
+		}
+	]
+}

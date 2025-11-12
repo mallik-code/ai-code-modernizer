@@ -9,7 +9,7 @@ This module defines the multi-agent workflow that orchestrates:
 The workflow includes conditional routing and retry logic.
 """
 
-from typing import Dict, Any, Literal
+from typing import Dict, Any, Literal, Optional
 from langgraph.graph import StateGraph, END
 from graph.state import MigrationState, create_initial_state
 from agents.migration_planner import MigrationPlannerAgent
@@ -199,7 +199,9 @@ def staging_deployer_node(state: MigrationState) -> MigrationState:
         result = agent.execute({
             "project_path": state["project_path"],
             "migration_plan": state.get("migration_plan"),
-            "validation_result": state.get("validation_result")
+            "validation_result": state.get("validation_result"),
+            "github_token": state.get("github_token"),
+            "is_git_cloned_repo": state.get("is_git_cloned_repo", False)
         })
 
         # Update state
@@ -375,21 +377,27 @@ def create_workflow() -> StateGraph:
 # Workflow Execution
 # ============================================================================
 
-def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: int = 3) -> MigrationState:
+def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: int = 3, github_token: Optional[str] = None, is_git_cloned_repo: bool = False) -> MigrationState:
     """Run the complete migration workflow.
 
     Args:
         project_path: Path to project
         project_type: Type of project (nodejs, python)
         max_retries: Maximum retry attempts
+        github_token: GitHub Personal Access Token for API operations (optional)
+        is_git_cloned_repo: Whether the project was cloned from a Git repository
 
     Returns:
         Final workflow state
     """
-    logger.info("starting_workflow", project_path=project_path, project_type=project_type)
+    logger.info("starting_workflow",
+               project_path=project_path,
+               project_type=project_type,
+               has_github_token=bool(github_token),
+               is_git_cloned_repo=is_git_cloned_repo)
 
     # Create initial state
-    initial_state = create_initial_state(project_path, project_type, max_retries)
+    initial_state = create_initial_state(project_path, project_type, max_retries, github_token, is_git_cloned_repo)
 
     # Create and compile workflow
     workflow = create_workflow()

@@ -48,22 +48,35 @@ app.add_middleware(
 
 class MigrationStartRequest(BaseModel):
     """Request model for starting a migration."""
-    project_path: str = Field(..., description="Absolute or relative path to the project")
+    # Option 1: Local project path
+    project_path: Optional[str] = Field(None, description="Absolute or relative path to the project (if not using Git)")
+
+    # Option 2: Git repository
+    git_repo_url: Optional[str] = Field(None, description="Git repository URL (e.g., https://github.com/user/repo.git)")
+    git_branch: str = Field(default="main", description="Git branch to clone (default: main)")
+    github_token: Optional[str] = Field(None, description="GitHub personal access token for private repos")
+    force_fresh_clone: bool = Field(default=False, description="Force fresh clone even if repo exists locally (default: False for faster processing)")
+
+    # Common fields
     project_type: str = Field(..., description="Project type: 'nodejs' or 'python'")
     max_retries: int = Field(default=3, ge=0, le=10, description="Maximum retry attempts for failed validations")
-    options: Optional[dict] = Field(default_factory=dict, description="Additional options")
 
     model_config = {
         "json_schema_extra": {
-            "example": {
-                "project_path": "tmp/projects/simple_express_app",
-                "project_type": "nodejs",
-                "max_retries": 3,
-                "options": {
-                    "create_pr": True,
-                    "run_tests": True
+            "examples": [
+                {
+                    "project_path": "tmp/projects/simple_express_app",
+                    "project_type": "nodejs",
+                    "max_retries": 3
+                },
+                {
+                    "git_repo_url": "https://github.com/user/my-app.git",
+                    "git_branch": "main",
+                    "github_token": "ghp_xxxxxxxxxxxxx",
+                    "project_type": "nodejs",
+                    "max_retries": 3
                 }
-            }
+            ]
         }
     }
 
@@ -108,7 +121,7 @@ report_generator = ReportGenerator(output_dir="reports")
 # Background Task: Run Workflow
 # ============================================================================
 
-def run_workflow_task(migration_id: str, project_path: str, project_type: str, max_retries: int):
+def run_workflow_task(migration_id: str, project_path: str, project_type: str, max_retries: int, github_token: Optional[str] = None, is_git_cloned_repo: bool = False):
     """Run workflow in background thread.
 
     Args:
@@ -116,11 +129,15 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
         project_path: Path to project
         project_type: Type of project
         max_retries: Max retry attempts
+        github_token: GitHub Personal Access Token for API operations (optional)
+        is_git_cloned_repo: Whether the project was cloned from a Git repository
     """
     try:
         logger.info("starting_background_workflow",
                    migration_id=migration_id,
-                   project_path=project_path)
+                   project_path=project_path,
+                   has_github_token=bool(github_token),
+                   is_git_cloned_repo=is_git_cloned_repo)
 
         # Update status to running
         migrations_db[migration_id]["status"] = "running"
@@ -129,7 +146,9 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
         final_state = run_workflow(
             project_path=project_path,
             project_type=project_type,
-            max_retries=max_retries
+            max_retries=max_retries,
+            github_token=github_token,
+            is_git_cloned_repo=is_git_cloned_repo
         )
 
         # Extract results
@@ -275,10 +294,45 @@ async def start_migration(request: MigrationStartRequest, background_tasks: Back
     Raises:
         HTTPException: If project path doesn't exist or validation fails
     """
-    # Validate project path
-    project_path = Path(request.project_path)
-    if not project_path.exists():
-        raise HTTPException(status_code=404, detail=f"Project path not found: {request.project_path}")
+    # Determine project path (local or Git clone)
+    project_path_str = None
+    cloned_repo = False
+
+    if request.git_repo_url:
+        # Clone Git repository
+        logger.info("cloning_git_repository",
+                   repo_url=request.git_repo_url,
+                   branch=request.git_branch)
+
+        from utils.git_utils import GitCloner
+
+        try:
+            cloner = GitCloner(workspace_dir="tmp/cloned_repos")
+            success, local_path, error = cloner.clone_repository(
+                repo_url=request.git_repo_url,
+                branch=request.git_branch,
+                github_token=request.github_token
+            )
+
+            if not success:
+                raise HTTPException(status_code=400, detail=f"Failed to clone repository: {error}")
+
+            project_path_str = local_path
+            cloned_repo = True
+            logger.info("repository_cloned", path=project_path_str)
+
+        except Exception as e:
+            logger.error("git_clone_failed", error=str(e))
+            raise HTTPException(status_code=500, detail=f"Git clone error: {str(e)}")
+
+    elif request.project_path:
+        # Use local project path
+        project_path = Path(request.project_path)
+        if not project_path.exists():
+            raise HTTPException(status_code=404, detail=f"Project path not found: {request.project_path}")
+        project_path_str = str(project_path.absolute())
+    else:
+        raise HTTPException(status_code=400, detail="Either project_path or git_repo_url must be provided")
 
     # Validate project type
     if request.project_type not in ["nodejs", "python"]:
@@ -291,36 +345,42 @@ async def start_migration(request: MigrationStartRequest, background_tasks: Back
     migration_record = {
         "migration_id": migration_id,
         "status": "started",
-        "project_path": str(project_path.absolute()),
+        "project_path": project_path_str,
         "project_type": request.project_type,
         "max_retries": request.max_retries,
         "started_at": datetime.utcnow(),
         "completed_at": None,
         "duration_seconds": None,
         "result": None,
-        "errors": []
+        "errors": [],
+        "cloned_repo": cloned_repo,
+        "git_repo_url": request.git_repo_url if cloned_repo else None,
+        "git_branch": request.git_branch if cloned_repo else None
     }
 
     migrations_db[migration_id] = migration_record
 
     logger.info("migration_started",
                migration_id=migration_id,
-               project_path=request.project_path,
-               project_type=request.project_type)
+               project_path=project_path_str,
+               project_type=request.project_type,
+               cloned_repo=cloned_repo)
 
     # Start workflow in background
     background_tasks.add_task(
         run_workflow_task,
         migration_id,
-        str(project_path.absolute()),
+        project_path_str,
         request.project_type,
-        request.max_retries
+        request.max_retries,
+        request.github_token,
+        cloned_repo
     )
 
     return {
         "migration_id": migration_id,
         "status": "started",
-        "project_path": str(project_path.absolute()),
+        "project_path": project_path_str,
         "project_type": request.project_type,
         "started_at": migration_record["started_at"].isoformat(),
         "message": "Migration workflow started successfully. Use GET /api/migrations/{migration_id} to check status."
