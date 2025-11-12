@@ -171,6 +171,11 @@ class ReportGenerator:
 
         # Breaking Changes Detail
         md += "### Breaking Changes Detail\n\n"
+        md += "> **ℹ️ What are Breaking Changes?**\n"
+        md += "> Breaking changes are modifications in a new library version that are NOT backward-compatible. "
+        md += "This means code written for the old version may require updates to work with the new version. "
+        md += "Examples include: removed functions, changed API signatures, renamed methods, or removed built-in features. "
+        md += "They don't mean your code is broken - they indicate potential compatibility issues that may need attention.\n\n"
 
         for pkg_name, pkg_info in dependencies.items():
             breaking_changes = pkg_info.get('breaking_changes', [])
@@ -745,6 +750,15 @@ class ReportGenerator:
         if dependencies:
             html += """
         <h2>Dependencies Analysis</h2>
+        <div style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 4px;">
+            <p style="margin: 0; font-weight: 600; color: #1976d2;">ℹ️ What are Breaking Changes?</p>
+            <p style="margin: 10px 0 0 0; color: #555;">
+                Breaking changes are modifications in a new library version that are NOT backward-compatible.
+                This means code written for the old version may require updates to work with the new version.
+                Examples include: removed functions, changed API signatures, renamed methods, or removed built-in features.
+                They don't mean your code is broken - they indicate potential compatibility issues that may need attention.
+            </p>
+        </div>
         <table>
             <thead>
                 <tr>
@@ -871,45 +885,51 @@ class ReportGenerator:
         <h2>Workflow Execution</h2>
         <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto;">
 ┌─────────────────────────────────────────────────────────────┐
-│          AI Code Modernizer - Agent Workflow               │
+│          AI Code Modernizer - 4-Agent Workflow             │
 └─────────────────────────────────────────────────────────────┘
 
 """
 
-        # Migration Planner
+        # Agent 1: Migration Planner
         planner_status = "✅ COMPLETE" if migration_plan else "❌ FAILED"
         html += f"""┌─────────────────────┐
-│ Migration Planner   │ {planner_status}
+│ [1] Migration       │ {planner_status}
+│     Planner         │
 └─────────────────────┘
           ↓
    (npm registry API)
           ↓
 """
 
-        # Runtime Validator
+        # Agent 2: Runtime Validator
         validator_status = "✅ COMPLETE" if validation_result and validation_result.get('status') == 'success' else "❌ FAILED" if validation_result else "⚠️ SKIPPED"
         html += f"""┌─────────────────────┐
-│ Runtime Validator   │ {validator_status}
+│ [2] Runtime         │ {validator_status}
+│     Validator       │
 └─────────────────────┘
           ↓
   (Docker container)
           ↓
 """
 
-        # Error Analyzer (if present)
+        # Agent 3: Error Analyzer (always show)
         error_analysis = state.get('error_analysis')
-        if error_analysis:
-            html += f"""┌─────────────────────┐
-│  Error Analyzer     │ ✅ COMPLETE
+        analyzer_status = "✅ COMPLETE" if error_analysis else "⚠️ NOT NEEDED"
+        html += f"""┌─────────────────────┐
+│ [3] Error Analyzer  │ {analyzer_status}
+│   (conditional)     │
 └─────────────────────┘
+          ↓
+  (only if validation fails)
           ↓
 """
 
-        # Staging Deployer
+        # Agent 4: Staging Deployer
         deployment_result = state.get('deployment_result')
         deployer_status = "✅ COMPLETE" if deployment_result and deployment_result.get('status') == 'success' else "⚠️ SKIPPED" if not deployment_result else "❌ FAILED"
         html += f"""┌─────────────────────┐
-│ Staging Deployer    │ {deployer_status}
+│ [4] Staging         │ {deployer_status}
+│     Deployer        │
 └─────────────────────┘
           ↓
   (GitHub PR created)
@@ -959,14 +979,17 @@ class ReportGenerator:
                 </tr>
 """
 
-        if error_analysis:
-            fix_count = len(error_analysis.get('fix_suggestions', []))
-            html += f"""
+        # Error Analyzer (always show)
+        analyzer_status_text = "COMPLETE" if error_analysis else "NOT NEEDED"
+        analyzer_badge_class = "success" if error_analysis else "warning"
+        fix_count = len(error_analysis.get('fix_suggestions', [])) if error_analysis else 0
+        analyzer_details = f"Analyzed errors, {fix_count} fix suggestions" if error_analysis else "Validation succeeded, no errors to analyze"
+        html += f"""
                 <tr>
                     <td>Error Analyzer</td>
-                    <td><span class="badge status-success">COMPLETE</span></td>
+                    <td><span class="badge status-{analyzer_badge_class}">{analyzer_status_text}</span></td>
                     <td>${analyzer_cost:.6f}</td>
-                    <td>Analyzed errors, {fix_count} fix suggestions</td>
+                    <td>{analyzer_details}</td>
                 </tr>
 """
 
