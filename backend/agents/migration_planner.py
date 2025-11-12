@@ -18,6 +18,7 @@ from typing import Dict, List, Optional
 from pathlib import Path
 
 from agents.base import BaseAgent
+from utils.package_registry import PackageRegistry
 
 
 class MigrationPlannerAgent(BaseAgent):
@@ -259,21 +260,29 @@ Be thorough, accurate, and prioritize safety."""
         project_type = dependency_data["project_type"]
         dependencies = dependency_data["dependencies"]
 
+        # Enrich dependencies with latest versions from registry
+        self.logger.info("fetching_latest_versions", count=len(dependencies))
+        enriched_deps = PackageRegistry.enrich_dependencies_with_latest(
+            dependencies,
+            project_type
+        )
+        self.logger.info("latest_versions_fetched", count=len(enriched_deps))
+
         prompt = f"""Analyze these {project_type.upper()} dependencies and create a migration plan.
 
 PROJECT TYPE: {project_type}
 DEPENDENCY FILE: {dependency_data['file_path']}
 
-CURRENT DEPENDENCIES:
-{json.dumps(dependencies, indent=2)}
+DEPENDENCIES WITH LATEST VERSIONS:
+{json.dumps(enriched_deps, indent=2)}
 
 TASKS:
 1. For each dependency:
-   - Determine if it's outdated (check major/minor versions)
-   - Identify the latest stable version
-   - Research known breaking changes between current and target version
-   - Assess migration risk (low/medium/high)
-   - Determine action: upgrade, remove (if deprecated), or keep
+   - Compare current_version with latest_version
+   - Determine if upgrade is needed
+   - Research known breaking changes between current and latest version
+   - Assess migration risk (low/medium/high) based on version jump
+   - Determine action: upgrade, remove (if deprecated), or keep (if already latest)
 
 2. Create a phased migration strategy:
    - Phase 1: Low-risk updates (patch versions, minor updates with no breaking changes)
@@ -287,10 +296,11 @@ TASKS:
    - Overall risk assessment
 
 IMPORTANT:
+- Use the provided latest_version field to determine target versions
 - For Node.js: Check if body-parser is used (deprecated in Express 5+)
 - For Python: Check for packages with known security vulnerabilities
 - Consider dependency conflicts (e.g., package A requires old version of package B)
-- Be specific about breaking changes
+- Be specific about breaking changes based on version differences
 
 OUTPUT FORMAT: Return ONLY valid JSON matching the specified schema. No markdown, no explanations outside JSON."""
 
@@ -318,7 +328,7 @@ OUTPUT FORMAT: Return ONLY valid JSON matching the specified schema. No markdown
 
             # Handle different formats for dependencies (some LLMs return array format)
             # Handle different field names that different LLMs might use
-            # Check all possible variations: dependencies, dependenciesAnalysis, dependencyAnalysis, dependency_analysis
+            # Check all possible variations: dependencies, dependenciesAnalysis, dependencyAnalysis, dependency_analysis, dependency_migration_plan
             if "dependencies" not in plan:
                 if "dependenciesAnalysis" in plan:
                     plan["dependencies"] = plan["dependenciesAnalysis"]
@@ -329,6 +339,12 @@ OUTPUT FORMAT: Return ONLY valid JSON matching the specified schema. No markdown
                 elif "dependency_analysis" in plan:
                     plan["dependencies"] = plan["dependency_analysis"]
                     del plan["dependency_analysis"]
+                elif "dependency_migration_plan" in plan:
+                    # Extract dependencies from nested structure
+                    nested = plan["dependency_migration_plan"]
+                    if isinstance(nested, dict) and "dependencies" in nested:
+                        plan["dependencies"] = nested["dependencies"]
+                    del plan["dependency_migration_plan"]
 
             if "dependencies" in plan:
                 if isinstance(plan["dependencies"], list):

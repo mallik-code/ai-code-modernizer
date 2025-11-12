@@ -197,29 +197,9 @@ Be thorough, safe, and provide clear guidance."""
             migration_plan: Migration plan
 
         Returns:
-            Branch name (e.g., "upgrade/express-5.0.0")
+            Branch name (e.g., "upgrade/dependencies-20251112-104530")
         """
-        # Find the most significant upgrade
-        dependencies = migration_plan.get("dependencies", {})
-
-        # Prioritize high-risk upgrades, then major version changes
-        high_risk_deps = [
-            (name, info) for name, info in dependencies.items()
-            if info.get("risk") == "high" and info.get("action") == "upgrade"
-        ]
-
-        if high_risk_deps:
-            name, info = high_risk_deps[0]
-            version = info.get("target_version", "latest")
-            return f"upgrade/{name}-{version}"
-
-        # Otherwise, use the first upgrade
-        for name, info in dependencies.items():
-            if info.get("action") == "upgrade":
-                version = info.get("target_version", "latest")
-                return f"upgrade/{name}-{version}"
-
-        # Fallback
+        # Always use timestamp format for consistency
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         return f"upgrade/dependencies-{timestamp}"
 
@@ -387,19 +367,19 @@ Be thorough, safe, and provide clear guidance."""
             validation_result: Validation results
 
         Returns:
-            Commit message
+            Commit message in conventional commits format
         """
         dependencies = migration_plan.get("dependencies", {})
         upgraded = [name for name, info in dependencies.items() if info.get("action") == "upgrade"]
         removed = [name for name, info in dependencies.items() if info.get("action") == "remove"]
 
-        # Build commit title
-        if len(upgraded) == 1:
+        # Build commit title (conventional commits format)
+        if len(upgraded) == 1 and len(removed) == 0:
             dep_name = upgraded[0]
             dep_info = dependencies[dep_name]
             current = dep_info.get("current_version", "")
             target = dep_info.get("target_version", "")
-            title = f"chore(deps): upgrade {dep_name} from {current} to {target}"
+            title = f"chore(deps): upgrade {dep_name} {current} → {target}"
         elif len(upgraded) > 1:
             title = f"chore(deps): upgrade {len(upgraded)} dependencies"
         else:
@@ -409,33 +389,22 @@ Be thorough, safe, and provide clear guidance."""
         body_parts = []
 
         if upgraded:
-            body_parts.append("## Upgraded Dependencies")
+            body_parts.append("Upgraded:")
             for name in upgraded:
                 info = dependencies[name]
                 current = info.get("current_version", "unknown")
                 target = info.get("target_version", "unknown")
-                risk = info.get("risk", "unknown")
-                body_parts.append(f"- {name}: {current} → {target} (risk: {risk})")
+                body_parts.append(f"  - {name}: {current} → {target}")
 
         if removed:
-            body_parts.append("\n## Removed Dependencies")
+            body_parts.append("\nRemoved:")
             for name in removed:
                 info = dependencies[name]
                 reason = info.get("reason", "Deprecated")
-                body_parts.append(f"- {name} ({reason})")
+                body_parts.append(f"  - {name} ({reason})")
 
         if validation_result and validation_result.get("status") == "success":
-            body_parts.append("\n## Validation")
-            body_parts.append("✅ Runtime validation passed in Docker")
-            body_parts.append("✅ Application starts successfully")
-            body_parts.append("✅ Health checks passed")
-
-        body_parts.append("\n## Migration Strategy")
-        strategy = migration_plan.get("migration_strategy", {})
-        total_phases = strategy.get("total_phases", 0)
-        overall_risk = migration_plan.get("overall_risk", "unknown")
-        body_parts.append(f"- Phases: {total_phases}")
-        body_parts.append(f"- Overall Risk: {overall_risk}")
+            body_parts.append("\nValidation: ✓ Passed runtime tests in Docker")
 
         # Combine
         commit_message = title + "\n\n" + "\n".join(body_parts)

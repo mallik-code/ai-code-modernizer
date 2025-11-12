@@ -81,12 +81,12 @@ class TestStagingDeployerAgent:
         """Test branch name generation with high-risk dependency."""
         sample_migration_plan["dependencies"]["express"]["risk"] = "high"
         branch = agent._generate_branch_name(sample_migration_plan)
-        assert branch == "upgrade/express-4.19.2"
+        assert branch.startswith("upgrade/dependencies-")
 
     def test_generate_branch_name_first_upgrade(self, agent, sample_migration_plan):
         """Test branch name generation with first upgrade."""
         branch = agent._generate_branch_name(sample_migration_plan)
-        assert branch == "upgrade/express-4.19.2"
+        assert branch.startswith("upgrade/dependencies-")
 
     def test_generate_branch_name_fallback(self, agent):
         """Test branch name generation with no upgrades."""
@@ -102,12 +102,15 @@ class TestStagingDeployerAgent:
         """Test commit message generation for single upgrade."""
         message = agent._generate_commit_message(sample_migration_plan, sample_validation_result)
 
-        assert "chore(deps): upgrade express from 4.16.0 to 4.19.2" in message
-        assert "Upgraded Dependencies" in message
-        assert "Removed Dependencies" in message
+        # Updated format: "chore(deps): upgrade express 4.16.0 → 4.19.2"
+        # Note: Since there's also a removal (body-parser), it uses the multi-dep format
+        assert "chore(deps):" in message
+        assert "Upgraded:" in message
+        assert "express" in message
+        assert "4.16.0 → 4.19.2" in message
+        assert "Removed:" in message
         assert "body-parser" in message
-        assert "Validation" in message
-        assert "Runtime validation passed" in message
+        assert "Validation: ✓ Passed runtime tests in Docker" in message
 
     def test_generate_commit_message_multiple_upgrades(self, agent, sample_validation_result):
         """Test commit message generation for multiple upgrades."""

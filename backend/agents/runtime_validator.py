@@ -124,7 +124,34 @@ Be thorough and prioritize correctness."""
                            tests_passed=validation_result["tests_passed"])
 
             # Analyze results with LLM
-            analysis = self._analyze_validation_results(validation_result, migration_plan)
+            # Skip LLM analysis if validation was clearly successful
+            if (validation_result["status"] == "success" and
+                validation_result["build_success"] and
+                validation_result["install_success"] and
+                validation_result["runtime_success"] and
+                validation_result["health_check_success"]):
+
+                # Direct success - no need for LLM analysis
+                analysis = {
+                    "validation_status": "success",
+                    "validation_details": {
+                        "container_created": True,
+                        "dependencies_installed": validation_result["install_success"],
+                        "application_started": validation_result["runtime_success"],
+                        "health_checks_passed": validation_result["health_check_success"],
+                        "tests_run": validation_result["tests_run"],
+                        "tests_passed": validation_result["tests_passed"]
+                    },
+                    "errors": [],
+                    "recommendation": "proceed",
+                    "next_steps": ["Deploy to staging environment", "Create pull request"],
+                    "confidence": "high"
+                }
+                self.logger.info("validation_success_without_llm",
+                               tests_configured=validation_result["tests_run"])
+            else:
+                # Validation had issues - use LLM for analysis
+                analysis = self._analyze_validation_results(validation_result, migration_plan)
 
             # Cleanup
             validator.cleanup_all()

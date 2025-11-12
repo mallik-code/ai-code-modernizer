@@ -136,7 +136,7 @@ class TestWorkflowIntegration:
             deployer_instance = Mock()
             deployer_instance.execute.return_value = {
                 "status": "success",
-                "branch": "upgrade/express-4.19.2",
+                "branch": "upgrade/dependencies-20251112-104530",
                 "pr_url": "https://github.com/test/repo/pull/1"
             }
             mock_deployer.return_value = deployer_instance
