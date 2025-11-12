@@ -8,11 +8,13 @@ An autonomous multi-agent AI system that safely upgrades code dependencies throu
 
 ### Key Features
 
-- 🤖 **Multi-Agent System**: Specialized agents for planning, validation, error analysis, and deployment
-- 🐳 **Runtime Validation**: Actually runs your code in Docker to verify upgrades work
-- 🔄 **Autonomous Problem-Solving**: Learns from failures and adapts strategies automatically
-- 🎯 **Human-in-the-Loop**: Strategic decisions require human approval
-- 📊 **Production-Ready**: State persistence, checkpointing, and audit trails
+- 🤖 **4-Agent Architecture**: Specialized agents for planning, validation, error analysis, and deployment
+- 🐳 **Runtime Validation**: Runs your code in isolated Docker containers with functional tests
+- 🔄 **Autonomous Problem-Solving**: Learns from failures and adapts strategies (up to 3 retry attempts)
+- 🎯 **Human-in-the-Loop**: All changes go through GitHub PR review (safety gate)
+- 📊 **Comprehensive Reports**: HTML/Markdown/JSON with AI insights and cost tracking
+- 💰 **Cost-Optimized**: Gemini 2.0 Flash (~$0.001/migration) or Claude Sonnet 4 (~$0.015/migration)
+- 🔍 **npm Registry Integration**: Fetches real latest versions for accurate upgrade detection
 
 ## 🏗️ Architecture
 
@@ -328,43 +330,63 @@ pr_url = tools.github_create_pr(
 )
 ```
 
-## 🎭 Agents
+## 🎭 4-Agent Architecture
 
-### 1. Migration Planner Agent
-- Analyzes codebase dependencies
-- Researches breaking changes
-- Creates phased migration strategies
-- **Tools**: MCP (GitHub, Filesystem), LLM reasoning
+### Agent 1: Migration Planner
+- Analyzes package.json/requirements.txt dependencies
+- **npm Registry Integration**: Fetches real latest versions from registry.npmjs.org
+- Researches breaking changes between current and target versions
+- Creates phased migration strategies (low/medium/high risk)
+- **Cost**: ~$0.001 (Gemini) or ~$0.015 (Claude) per run
+- **Tools**: PackageRegistry, LLM reasoning
+- **Output**: Migration plan with dependencies, phases, risk assessment
 
-### 2. Runtime Validator Agent
-- Creates isolated Docker environments
-- Applies upgrades safely
-- Runs application and tests
-- Validates critical flows
-- **Tools**: Docker SDK, MCPToolManager
+### Agent 2: Runtime Validator
+- Creates isolated Docker environments (node:18-alpine or python:3.11-slim)
+- **Auto-cleanup**: Detects and removes existing containers before creating new ones
+- Applies dependency upgrades from migration plan
+- Installs dependencies and starts application
+- **Executes functional tests**: Runs Jest (Node.js) or pytest (Python) suites
+- Performs health checks (process monitoring)
+- **Tools**: Docker SDK, DockerValidator
+- **Output**: Validation results with build/install/runtime/health/test status
 
-### 3. Error Analysis Agent
-- Diagnoses validation failures
-- Researches similar issues
-- Generates fixes automatically
-- Suggests alternative strategies
-- **Tools**: MCP (GitHub), LLM reasoning
+### Agent 3: Error Analyzer
+- **Conditional execution**: Only runs when validation fails
+- Parses error logs (npm, pip, runtime errors)
+- Extracts errors using regex patterns for JavaScript/Python
+- Identifies root causes via LLM analysis
+- Generates fix suggestions with priority levels (high/medium/low)
+- **Smart categorization**: Avoids false positives (e.g., "TypeError" vs "peer dependency")
+- **Tools**: LLM reasoning, error pattern matching
+- **Output**: Error analysis with fixes and alternative strategies
 
-### 4. Staging Deployment Agent
-- Creates feature branches
-- Pushes validated changes
-- Creates pull requests
-- Triggers CI/CD pipelines
-- **Tools**: MCP (GitHub), Git commands
+### Agent 4: Staging Deployer
+- Creates Git branches with timestamp-based naming (`upgrade/dependencies-YYYYMMDD-HHMMSS`)
+- Updates dependency files (package.json, requirements.txt) with target versions
+- Generates conventional commit messages with upgrade details
+- Creates detailed GitHub PR with migration info, breaking changes, test results
+- **Human-in-the-Loop**: All changes go through PR review (safety gate)
+- **Tools**: MCP (GitHub - mock), Git commands
+- **Output**: Branch name, PR URL, rollback instructions
 
-## 🔄 Workflow
+## 🔄 Workflow (4-Agent Orchestration)
 
-1. **Upload Project** → Agent analyzes dependencies
-2. **Strategy Creation** → Plans migration with multiple approaches
-3. **Validation** → Tests in Docker, auto-fixes failures
-4. **Human Approval** → Review and approve changes
-5. **Staging Deployment** → Deploys to staging environment
-6. **Production Ready** → QA verification and production deployment
+```
+User Request → [1] Migration Planner → [2] Runtime Validator → [Success/Failure]
+                                               ↓ Failure (retries < 3)
+                                         [3] Error Analyzer → [2] Runtime Validator (retry)
+                                               ↓ Success
+                                         [4] Staging Deployer → GitHub PR → Human Review
+```
+
+**Detailed Steps:**
+1. **Upload Project** → Migration Planner analyzes dependencies via npm registry
+2. **Strategy Creation** → Planner creates phased migration plan (low/medium/high risk)
+3. **Validation** → Runtime Validator tests in Docker container with functional tests
+4. **Auto-Fix (if needed)** → Error Analyzer diagnoses failures and generates fixes (up to 3 retries)
+5. **Deployment** → Staging Deployer creates Git branch and GitHub PR
+6. **Human Review** → Review PR, approve, and merge when ready
 
 ## 📈 Key Metrics
 

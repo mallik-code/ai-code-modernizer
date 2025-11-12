@@ -5,6 +5,7 @@ Provides REST API endpoints for triggering and monitoring dependency upgrades.
 
 import os
 import uuid
+import glob
 from datetime import datetime
 from typing import Optional, List
 from pathlib import Path
@@ -359,6 +360,27 @@ async def get_migration_status(migration_id: str):
     # Add report download links if available
     if migration.get("reports"):
         response["reports"] = migration["reports"]
+    elif migration["status"] in ["deployed", "error"]:
+        # If migration is complete but reports key is missing, check for report files
+        project_name = Path(migration["project_path"]).name
+        report_pattern = f"reports/{project_name}_migration_report_*.html"
+        matching_reports = sorted(glob.glob(report_pattern), key=lambda x: Path(x).stat().st_mtime, reverse=True)
+
+        if matching_reports:
+            # Use the most recent report
+            base_name = Path(matching_reports[0]).stem
+            response["reports"] = {
+                "html": f"/api/migrations/{migration_id}/report?type=html",
+                "markdown": f"/api/migrations/{migration_id}/report?type=markdown",
+                "json": f"/api/migrations/{migration_id}/report?type=json"
+            }
+            # Store in migration record for future requests
+            migrations_db[migration_id]["reports"] = response["reports"]
+            migrations_db[migration_id]["report_files"] = {
+                "html": matching_reports[0],
+                "markdown": matching_reports[0].replace('.html', '.md'),
+                "json": matching_reports[0].replace('.html', '.json')
+            }
 
     return response
 

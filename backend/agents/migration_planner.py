@@ -295,8 +295,11 @@ TASKS:
    - Overall recommendations
    - Overall risk assessment
 
-IMPORTANT:
-- Use the provided latest_version field to determine target versions
+CRITICAL INSTRUCTIONS:
+- In your response, current_version MUST be the EXACT value from the "current_version" field in the input data above
+- The target_version should be the "latest_version" from the input data above
+- DO NOT set current_version to the latest_version value - they should be different if an upgrade is needed
+- Example: If input shows {{"current_version": "4.16.0", "latest_version": "5.1.0"}}, your response must have current_version: "4.16.0" and target_version: "5.1.0"
 - For Node.js: Check if body-parser is used (deprecated in Express 5+)
 - For Python: Check for packages with known security vulnerabilities
 - Consider dependency conflicts (e.g., package A requires old version of package B)

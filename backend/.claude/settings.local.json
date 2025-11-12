@@ -22,7 +22,11 @@
       "Bash(python:*)",
       "Bash(git checkout:*)",
       "Bash(git revert:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(set:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd //c \"taskkill /PID 16852 /F & taskkill /PID 22780 /F\")"
     ],
     "deny": [],
     "ask": []

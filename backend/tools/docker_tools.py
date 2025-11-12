@@ -265,13 +265,26 @@ class DockerValidator:
         # Sanitize name for Docker (lowercase, alphanumeric, hyphens, underscores only)
         container_name = f"ai-modernizer-{project_name.lower().replace('_', '-')}"
 
-        # Remove any existing container with same name
+        # Check for and remove any existing container with same name
         try:
             old_container = self.client.containers.get(container_name)
+            container_status = old_container.status
+            self.logger.info("found_existing_container",
+                           name=container_name,
+                           status=container_status)
+
+            # Stop container if running
+            if container_status in ['running', 'paused']:
+                self.logger.info("stopping_old_container", name=container_name)
+                old_container.stop(timeout=5)
+
+            # Remove container
             self.logger.info("removing_old_container", name=container_name)
             old_container.remove(force=True)
-        except Exception:
-            pass  # Container doesn't exist, which is fine
+            self.logger.info("old_container_removed", name=container_name)
+        except Exception as e:
+            # Container doesn't exist, which is fine
+            self.logger.debug("no_existing_container", name=container_name)
 
         # Create container with port mapping for browser access
         container = self.client.containers.create(
