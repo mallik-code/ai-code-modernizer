@@ -186,6 +186,18 @@ class DockerValidator:
                         self.logger.info("validation_successful_with_tests",
                                        container_id=result["container_id"],
                                        test_summary=test_result.get("test_summary", ""))
+
+                        # Restart application after tests (tests may have killed the background process)
+                        # Only restart if container will be kept for debugging/browser access
+                        if not self.cleanup_containers:
+                            self.logger.info("restarting_app_after_tests", container_id=result["container_id"])
+                            try:
+                                self._start_application(container, project_type, project_path)
+                                self.logger.info("app_restarted_for_browser_access",
+                                               container_id=result["container_id"],
+                                               port=result["port"])
+                            except Exception as e:
+                                self.logger.warning("app_restart_failed", error=str(e))
                     else:
                         result["status"] = "error"
                         result["errors"].append(f"Tests failed: {test_result.get('test_summary', 'Unknown error')}")
@@ -454,17 +466,18 @@ class DockerValidator:
                 import json
                 package_data = json.loads(output.decode())
                 start_script = package_data.get("scripts", {}).get("start", "node index.js")
-                cmd = f"sh -c '{start_script} &'"
+                # Use nohup to prevent the process from becoming a zombie
+                cmd = f"sh -c 'nohup {start_script} > /tmp/app.log 2>&1 &'"
             else:
-                cmd = "sh -c 'node index.js &'"
+                cmd = "sh -c 'nohup node index.js > /tmp/app.log 2>&1 &'"
 
         elif project_type == "python":
             # Look for main.py, app.py, or server.py
-            cmd = "sh -c 'python app.py &' || sh -c 'python main.py &' || sh -c 'python server.py &'"
+            cmd = "sh -c 'nohup python app.py > /tmp/app.log 2>&1 &' || sh -c 'nohup python main.py > /tmp/app.log 2>&1 &' || sh -c 'nohup python server.py > /tmp/app.log 2>&1 &'"
 
         self.logger.info("starting_application", command=cmd)
 
-        exit_code, output = container.exec_run(cmd, workdir="/app", detach=True)
+        exit_code, output = container.exec_run(cmd, workdir="/app", detach=False)
 
         # Wait for startup
         time.sleep(5)
