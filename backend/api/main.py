@@ -51,12 +51,14 @@ class MigrationStartRequest(BaseModel):
     project_path: str = Field(..., description="Absolute or relative path to the project")
     project_type: str = Field(..., description="Project type: 'nodejs' or 'python'")
     max_retries: int = Field(default=3, ge=0, le=10, description="Maximum retry attempts for failed validations")
+    git_branch: str = Field(default="main", description="Git branch to use for the migration (default: main)")
     options: Optional[dict] = Field(default_factory=dict, description="Additional options")
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "project_path": "tmp/projects/simple_express_app",
+                "project_path": "target_repos/simple_express_app",
+                "git_branch": "main",
                 "project_type": "nodejs",
                 "max_retries": 3,
                 "options": {
@@ -108,7 +110,7 @@ report_generator = ReportGenerator(output_dir="reports")
 # Background Task: Run Workflow
 # ============================================================================
 
-def run_workflow_task(migration_id: str, project_path: str, project_type: str, max_retries: int):
+def run_workflow_task(migration_id: str, project_path: str, project_type: str, max_retries: int, git_branch: str = "main"):
     """Run workflow in background thread.
 
     Args:
@@ -116,11 +118,13 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
         project_path: Path to project
         project_type: Type of project
         max_retries: Max retry attempts
+        git_branch: Git branch to use for the migration (default: main)
     """
     try:
         logger.info("starting_background_workflow",
                    migration_id=migration_id,
-                   project_path=project_path)
+                   project_path=project_path,
+                   git_branch=git_branch)
 
         # Update status to running
         migrations_db[migration_id]["status"] = "running"
@@ -129,7 +133,8 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
         final_state = run_workflow(
             project_path=project_path,
             project_type=project_type,
-            max_retries=max_retries
+            max_retries=max_retries,
+            git_branch=git_branch
         )
 
         # Extract results
@@ -284,6 +289,78 @@ async def start_migration(request: MigrationStartRequest, background_tasks: Back
     if request.project_type not in ["nodejs", "python"]:
         raise HTTPException(status_code=400, detail="project_type must be 'nodejs' or 'python'")
 
+    # Checkout the specified branch if the directory is a git repository
+    if request.git_branch:
+        import subprocess
+        try:
+            # Check if it's a git repository
+            git_dir = project_path / ".git"
+            if git_dir.exists():
+                # Change to project directory and checkout the specified branch
+                result = subprocess.run(
+                    ["git", "checkout", request.git_branch],
+                    cwd=project_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.returncode != 0:
+                    # If checkout fails, try fetching the branch first
+                    fetch_result = subprocess.run(
+                        ["git", "fetch", "origin", request.git_branch],
+                        cwd=project_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    
+                    if fetch_result.returncode == 0:
+                        # Try checkout again after fetch
+                        result = subprocess.run(
+                            ["git", "checkout", request.git_branch],
+                            cwd=project_path,
+                            capture_output=True,
+                            text=True,
+                            timeout=30
+                        )
+                
+                if result.returncode != 0:
+                    logger.warning("branch_checkout_failed", 
+                                 branch=request.git_branch, 
+                                 project_path=str(project_path),
+                                 error=result.stderr)
+                    # We'll continue anyway as this might not be critical for all use cases
+                else:
+                    logger.info("branch_checked_out", 
+                               branch=request.git_branch, 
+                               project_path=str(project_path))
+                    # Also pull latest changes for the branch
+                    pull_result = subprocess.run(
+                        ["git", "pull", "origin", request.git_branch],
+                        cwd=project_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    if pull_result.returncode == 0:
+                        logger.info("branch_pulled", 
+                                   branch=request.git_branch,
+                                   project_path=str(project_path))
+            else:
+                logger.info("not_a_git_repository", project_path=str(project_path))
+        except subprocess.TimeoutExpired:
+            logger.warning("git_operation_timeout", 
+                          operation="checkout", 
+                          branch=request.git_branch,
+                          project_path=str(project_path))
+        except Exception as e:
+            logger.warning("git_operation_error", 
+                          error=str(e),
+                          operation="checkout",
+                          branch=request.git_branch,
+                          project_path=str(project_path))
+
     # Generate unique migration ID
     migration_id = f"mig_{uuid.uuid4().hex[:12]}"
 
@@ -314,7 +391,8 @@ async def start_migration(request: MigrationStartRequest, background_tasks: Back
         migration_id,
         str(project_path.absolute()),
         request.project_type,
-        request.max_retries
+        request.max_retries,
+        request.git_branch
     )
 
     return {

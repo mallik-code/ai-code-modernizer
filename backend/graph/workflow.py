@@ -199,7 +199,8 @@ def staging_deployer_node(state: MigrationState) -> MigrationState:
         result = agent.execute({
             "project_path": state["project_path"],
             "migration_plan": state.get("migration_plan"),
-            "validation_result": state.get("validation_result")
+            "validation_result": state.get("validation_result"),
+            "base_branch": state.get("git_branch", "main")
         })
 
         # Update state
@@ -375,21 +376,22 @@ def create_workflow() -> StateGraph:
 # Workflow Execution
 # ============================================================================
 
-def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: int = 3) -> MigrationState:
+def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: int = 3, git_branch: str = "main") -> MigrationState:
     """Run the complete migration workflow.
 
     Args:
         project_path: Path to project
         project_type: Type of project (nodejs, python)
         max_retries: Maximum retry attempts
+        git_branch: Git branch being used for the migration (default: main)
 
     Returns:
         Final workflow state
     """
-    logger.info("starting_workflow", project_path=project_path, project_type=project_type)
+    logger.info("starting_workflow", project_path=project_path, project_type=project_type, git_branch=git_branch)
 
     # Create initial state
-    initial_state = create_initial_state(project_path, project_type, max_retries)
+    initial_state = create_initial_state(project_path, project_type, max_retries, git_branch)
 
     # Create and compile workflow
     workflow = create_workflow()

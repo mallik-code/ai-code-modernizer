@@ -50,6 +50,7 @@ class MigrationState(TypedDict, total=False):
     # Project information
     project_path: str
     project_type: str
+    git_branch: str
 
     # Migration Planning
     dependency_file_content: str
@@ -80,13 +81,14 @@ class MigrationState(TypedDict, total=False):
     agent_costs: Dict[str, float]
 
 
-def create_initial_state(project_path: str, project_type: str = "nodejs", max_retries: int = 3) -> MigrationState:
+def create_initial_state(project_path: str, project_type: str = "nodejs", max_retries: int = 3, git_branch: str = "main") -> MigrationState:
     """Create initial state for workflow.
 
     Args:
         project_path: Path to project
         project_type: Type of project (nodejs, python)
         max_retries: Maximum retry attempts
+        git_branch: Git branch being used for the migration (default: main)
 
     Returns:
         Initial state dictionary
@@ -94,6 +96,7 @@ def create_initial_state(project_path: str, project_type: str = "nodejs", max_re
     return MigrationState(
         project_path=project_path,
         project_type=project_type,
+        git_branch=git_branch,
         dependency_file_content="",
         migration_plan=None,
         validation_result=None,
