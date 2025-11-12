@@ -9,7 +9,7 @@ This module defines the multi-agent workflow that orchestrates:
 The workflow includes conditional routing and retry logic.
 """
 
-from typing import Dict, Any, Literal
+from typing import Dict, Any, Literal, Optional
 from langgraph.graph import StateGraph, END
 from graph.state import MigrationState, create_initial_state
 from agents.migration_planner import MigrationPlannerAgent
@@ -200,14 +200,15 @@ def staging_deployer_node(state: MigrationState) -> MigrationState:
             "project_path": state["project_path"],
             "migration_plan": state.get("migration_plan"),
             "validation_result": state.get("validation_result"),
-            "base_branch": state.get("git_branch", "main")
+            "base_branch": state.get("git_branch", "main"),
+            "github_token": state.get("github_token")
         })
 
         # Update state
         if result["status"] == "success":
             state["deployment_result"] = result
             state["pr_url"] = result.get("pr_url")
-            state["branch_name"] = result.get("branch")
+            state["branch_name"] = result.get("branch_name")
             state["status"] = "deployed"
             logger.info("deployment_successful",
                        branch=state["branch_name"],
@@ -376,7 +377,7 @@ def create_workflow() -> StateGraph:
 # Workflow Execution
 # ============================================================================
 
-def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: int = 3, git_branch: str = "main") -> MigrationState:
+def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: int = 3, git_branch: str = "main", github_token: Optional[str] = None) -> MigrationState:
     """Run the complete migration workflow.
 
     Args:
@@ -384,14 +385,19 @@ def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: i
         project_type: Type of project (nodejs, python)
         max_retries: Maximum retry attempts
         git_branch: Git branch being used for the migration (default: main)
+        github_token: GitHub Personal Access Token for API operations (optional)
 
     Returns:
         Final workflow state
     """
-    logger.info("starting_workflow", project_path=project_path, project_type=project_type, git_branch=git_branch)
+    logger.info("starting_workflow", project_path=project_path, project_type=project_type, git_branch=git_branch, has_github_token=bool(github_token))
 
     # Create initial state
     initial_state = create_initial_state(project_path, project_type, max_retries, git_branch)
+
+    # If github_token is provided, add it to the state
+    if github_token:
+        initial_state["github_token"] = github_token
 
     # Create and compile workflow
     workflow = create_workflow()

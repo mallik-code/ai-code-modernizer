@@ -52,6 +52,7 @@ class MigrationStartRequest(BaseModel):
     project_type: str = Field(..., description="Project type: 'nodejs' or 'python'")
     max_retries: int = Field(default=3, ge=0, le=10, description="Maximum retry attempts for failed validations")
     git_branch: str = Field(default="main", description="Git branch to use for the migration (default: main)")
+    github_token: Optional[str] = Field(default=None, description="GitHub Personal Access Token for API operations (optional)")
     options: Optional[dict] = Field(default_factory=dict, description="Additional options")
 
     model_config = {
@@ -59,6 +60,7 @@ class MigrationStartRequest(BaseModel):
             "example": {
                 "project_path": "target_repos/simple_express_app",
                 "git_branch": "main",
+                "github_token": "ghp_xxxxxxxxxxxxx",
                 "project_type": "nodejs",
                 "max_retries": 3,
                 "options": {
@@ -110,7 +112,7 @@ report_generator = ReportGenerator(output_dir="reports")
 # Background Task: Run Workflow
 # ============================================================================
 
-def run_workflow_task(migration_id: str, project_path: str, project_type: str, max_retries: int, git_branch: str = "main"):
+def run_workflow_task(migration_id: str, project_path: str, project_type: str, max_retries: int, git_branch: str = "main", github_token: Optional[str] = None):
     """Run workflow in background thread.
 
     Args:
@@ -119,12 +121,14 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
         project_type: Type of project
         max_retries: Max retry attempts
         git_branch: Git branch to use for the migration (default: main)
+        github_token: GitHub Personal Access Token for API operations (optional)
     """
     try:
         logger.info("starting_background_workflow",
                    migration_id=migration_id,
                    project_path=project_path,
-                   git_branch=git_branch)
+                   git_branch=git_branch,
+                   has_github_token=bool(github_token))
 
         # Update status to running
         migrations_db[migration_id]["status"] = "running"
@@ -134,7 +138,8 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
             project_path=project_path,
             project_type=project_type,
             max_retries=max_retries,
-            git_branch=git_branch
+            git_branch=git_branch,
+            github_token=github_token
         )
 
         # Extract results
@@ -392,7 +397,8 @@ async def start_migration(request: MigrationStartRequest, background_tasks: Back
         str(project_path.absolute()),
         request.project_type,
         request.max_retries,
-        request.git_branch
+        request.git_branch,
+        request.github_token
     )
 
     return {
