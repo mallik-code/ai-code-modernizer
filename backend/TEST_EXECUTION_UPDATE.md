@@ -195,6 +195,7 @@ tests_passed=validation_result["tests_passed"]
     "status": "success" | "error",
     "container_id": "abc123...",
     "container_name": "ai-modernizer-simple-express-app",
+    "port": 3000,                # ✨ NEW: Port exposed to host for browser access
 
     # Build/Install/Runtime checks
     "build_success": True,

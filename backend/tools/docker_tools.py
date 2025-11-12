@@ -89,6 +89,7 @@ class DockerValidator:
                 "status": "success" | "error",
                 "container_id": "...",
                 "container_name": "...",
+                "port": int,  # Port exposed to host for browser access (3000 for nodejs, 5000 for python)
                 "build_success": bool,
                 "install_success": bool,
                 "runtime_success": bool,
@@ -119,6 +120,7 @@ class DockerValidator:
             "status": "error",
             "container_id": None,
             "container_name": None,
+            "port": None,
             "build_success": False,
             "install_success": False,
             "runtime_success": False,
@@ -132,9 +134,10 @@ class DockerValidator:
         container = None
         try:
             # Create container
-            container, image_name = self._create_container(project_path, project_type)
+            container, image_name, app_port = self._create_container(project_path, project_type)
             result["container_id"] = container.id[:12]
             result["container_name"] = container.name
+            result["port"] = app_port
             result["build_success"] = True
             self.logger.info("container_created", container_id=result["container_id"], name=result["container_name"])
 
@@ -214,7 +217,7 @@ class DockerValidator:
 
         return result
 
-    def _create_container(self, project_path: str, project_type: str) -> Tuple[Container, str]:
+    def _create_container(self, project_path: str, project_type: str) -> Tuple[Container, str, int]:
         """Create Docker container with appropriate base image.
 
         Args:
@@ -222,7 +225,7 @@ class DockerValidator:
             project_type: "nodejs" or "python"
 
         Returns:
-            Tuple of (Container, image_name)
+            Tuple of (Container, image_name, port)
         """
         if project_type == "nodejs":
             image_name = "node:18-alpine"
@@ -276,7 +279,7 @@ class DockerValidator:
         container.start()
         self.containers.append(container)
 
-        return container, image_name
+        return container, image_name, app_port
 
     def _copy_project_to_container(self, container: Container, project_path: str):
         """Copy project files to container.
