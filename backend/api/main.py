@@ -13,10 +13,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from graph.workflow import run_workflow
 from utils.logger import setup_logger
+from utils.report_generator import ReportGenerator
 
 logger = setup_logger(__name__)
 
@@ -97,6 +99,9 @@ migrations_db: dict[str, dict] = {}
 # Thread pool for async workflow execution
 executor = ThreadPoolExecutor(max_workers=3)
 
+# Report generator
+report_generator = ReportGenerator(output_dir="reports")
+
 
 # ============================================================================
 # Background Task: Run Workflow
@@ -161,6 +166,27 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
         start_time = migrations_db[migration_id]["started_at"]
         end_time = migrations_db[migration_id]["completed_at"]
         migrations_db[migration_id]["duration_seconds"] = int((end_time - start_time).total_seconds())
+
+        # Generate comprehensive reports
+        try:
+            project_name = Path(project_path).name
+            report_paths = report_generator.generate_all_reports(final_state, project_name)
+
+            # Store report paths in migration record
+            migrations_db[migration_id]["reports"] = {
+                "html": f"/api/migrations/{migration_id}/report?type=html",
+                "markdown": f"/api/migrations/{migration_id}/report?type=markdown",
+                "json": f"/api/migrations/{migration_id}/report?type=json"
+            }
+            migrations_db[migration_id]["report_files"] = report_paths
+
+            logger.info("reports_generated",
+                       migration_id=migration_id,
+                       reports=list(report_paths.keys()))
+        except Exception as e:
+            logger.warning("report_generation_failed",
+                          migration_id=migration_id,
+                          error=str(e))
 
         logger.info("background_workflow_complete",
                    migration_id=migration_id,
@@ -308,7 +334,7 @@ async def get_migration_status(migration_id: str):
         migration_id: Unique migration ID
 
     Returns:
-        Migration status and results
+        Migration status and results with report download links
 
     Raises:
         HTTPException: If migration ID not found
@@ -318,7 +344,7 @@ async def get_migration_status(migration_id: str):
 
     migration = migrations_db[migration_id]
 
-    return {
+    response = {
         "migration_id": migration_id,
         "status": migration["status"],
         "project_path": migration["project_path"],
@@ -329,6 +355,12 @@ async def get_migration_status(migration_id: str):
         "result": migration["result"],
         "errors": migration["errors"]
     }
+
+    # Add report download links if available
+    if migration.get("reports"):
+        response["reports"] = migration["reports"]
+
+    return response
 
 
 @app.get("/api/migrations")
@@ -372,6 +404,73 @@ async def list_migrations(limit: int = 10, offset: int = 0):
         "offset": offset,
         "migrations": migrations_list
     }
+
+
+@app.get("/api/migrations/{migration_id}/report")
+async def download_migration_report(migration_id: str, type: str = "html"):
+    """Download migration report in specified format.
+
+    Args:
+        migration_id: Unique migration ID
+        type: Report type - 'html', 'markdown', or 'json' (default: 'html')
+
+    Returns:
+        File download response
+
+    Raises:
+        HTTPException: If migration not found or report not available
+    """
+    if migration_id not in migrations_db:
+        raise HTTPException(status_code=404, detail=f"Migration not found: {migration_id}")
+
+    migration = migrations_db[migration_id]
+
+    # Check if reports are available
+    if not migration.get("report_files"):
+        raise HTTPException(
+            status_code=404,
+            detail="Report not available yet. Migration may still be running or failed before completion."
+        )
+
+    # Validate report type
+    valid_types = ["html", "markdown", "json"]
+    if type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid report type. Must be one of: {', '.join(valid_types)}"
+        )
+
+    # Get file path
+    report_file = migration["report_files"].get(type)
+    if not report_file or not Path(report_file).exists():
+        raise HTTPException(status_code=404, detail=f"Report file not found: {type}")
+
+    # Determine media type and filename extension
+    media_types = {
+        "html": "text/html",
+        "markdown": "text/markdown",
+        "json": "application/json"
+    }
+
+    extensions = {
+        "html": ".html",
+        "markdown": ".md",
+        "json": ".json"
+    }
+
+    project_name = Path(migration["project_path"]).name
+    filename = f"{project_name}_migration_report{extensions[type]}"
+
+    logger.info("report_downloaded",
+               migration_id=migration_id,
+               report_type=type,
+               filename=filename)
+
+    return FileResponse(
+        path=report_file,
+        media_type=media_types[type],
+        filename=filename
+    )
 
 
 @app.delete("/api/migrations/{migration_id}")
