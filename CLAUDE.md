@@ -54,14 +54,29 @@ npm install
 ```bash
 # Terminal 1 - Backend
 cd backend
+# Activate virtual environment first
+# Windows: venv\Scripts\activate
+# Linux/Mac: source venv/bin/activate
 uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
-# Terminal 2 - Frontend
-cd frontend
-npm run dev
+# Terminal 2 - React Frontend (simple HTML/CSS/JS)
+cd reactapp
+# Option 1: Using Python's built-in server
+python -m http.server 5500
+# Then open http://localhost:5500 in browser
+
+# Option 2: Using Node's http-server
+npx http-server
+# Then open the provided URL
+
+# Option 3: Using VS Code Live Server
+# Right-click index.html and select "Open with Live Server"
 ```
 
-Access: http://localhost:5173
+Access:
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+- **React Frontend**: http://localhost:5500 (or port shown by your server)
 
 ## High-Level Architecture
 
@@ -87,8 +102,13 @@ User Upload → Planner → Validator → [Pass: Deployer | Fail: Analyzer → V
 State (`MigrationState`) passes between agents via LangGraph containing project info, strategies, validation results, and errors.
 
 ### Frontend ↔ Backend Communication
-- **REST API** - Project submission, status queries
-- **WebSocket** - Real-time agent updates, thinking streams, graph state changes
+- **REST API** - Project submission, status queries, report content
+  - `POST /api/migrations/start` - Start new migration
+  - `GET /api/migrations/{id}` - Get migration status with report links
+  - `GET /api/migrations/{id}/report_content?type=html|markdown|json` - Get report content
+  - `GET /api/migrations/{id}/report?type=html|markdown|json` - Download reports
+- **WebSocket** - Real-time agent updates, thinking streams, workflow progress
+  - `WS /ws/migrations/{id}` - Live migration updates with structured messages
 
 ## Development Workflow
 
@@ -133,5 +153,6 @@ For detailed frontend development (React, WebSocket, UI): see `frontend/CLAUDE.m
 
 ## Tech Stack Summary
 
-**Backend**: Python 3.11+, LangGraph 0.2.16+, Claude Sonnet 4, FastAPI, Docker SDK, MCP
-**Frontend**: React 18, TypeScript, Vite, TailwindCSS, ReactFlow, Zustand
+**Backend**: Python 3.11+, LangGraph 0.2.16+, Multi-LLM (Anthropic/OpenAI/Gemini/Qwen/HuggingFace), FastAPI, Docker SDK, WebSocket, MCP
+**Frontend**: React 18 (Vanilla JS), HTML5, CSS3, WebSocket, Font Awesome icons
+**Status**: Fully functional with real-time updates, report viewing/downloading, and complete 4-agent workflow

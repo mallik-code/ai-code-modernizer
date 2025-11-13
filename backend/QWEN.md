@@ -31,7 +31,7 @@ All agents inherit from `BaseAgent` which provides:
 1. **Migration Planner** ✅ - Analyzes dependency files, identifies outdated dependencies, researches breaking changes, and creates phased migration plans. Features robust multi-LLM response parsing that handles varying formats from different providers (Gemini, Claude, GPT, Qwen, Llama).
 2. **Runtime Validator** ✅ - Creates Docker containers, applies upgrades, runs applications, tests health endpoints, and returns validation results with LLM-powered analysis.
 3. **Error Analyzer** ✅ - Parses error logs (npm, pip, runtime), identifies root causes, generates fix suggestions with LLM-powered analysis and fallback categorization. Extracts code context and proposes alternative strategies. Features smart pattern matching to avoid false positives (e.g., "TypeError" vs "peer dependency").
-4. **Staging Deployer** ✅ - Creates Git branches, updates dependency files (package.json/requirements.txt), generates conventional commits, creates detailed PR descriptions, and integrates with GitHub via MCP tools. Implements human-in-the-loop approval via pull requests.
+4. **Staging Deployer** ✅ - Creates Git branches, updates dependency files (package.json/requirements.txt), generates conventional commits, creates detailed PR descriptions, and integrates with GitHub via MCP tools. Implements human-in-the-loop approval via pull requests. (Note: This creates Git branches and PRs for review - no actual deployment to runtime environments occurs. The actual validation in Docker containers happens during Runtime Validation, not here.)
 
 ### Multi-Provider LLM Architecture
 The system supports multiple LLM providers through a flexible factory pattern:

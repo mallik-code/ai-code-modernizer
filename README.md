@@ -150,7 +150,7 @@ The system follows a microservices architecture with the following components:
 - ✅ Migration Planner Agent with npm registry integration
 - ✅ Runtime Validator Agent with Docker isolation
 - ✅ Error Analyzer Agent with smart error categorization
-- ✅ Staging Deployer Agent with GitHub PR creation
+- ✅ Staging Deployer Agent with GitHub PR creation (Note: This creates Git branches and PRs for review - no actual deployment to runtime environments occurs)
 - ✅ Docker validation tools with auto-cleanup
 - ✅ Sample Node.js project for testing
 - ✅ End-to-end integration tests
@@ -160,7 +160,10 @@ The system follows a microservices architecture with the following components:
 - ✅ Report generation (HTML/Markdown/JSON)
 - ✅ Git branch management
 - ✅ GitHub token integration
-- ✅ Professional UI with real-time updates, custom logo, and report download capability
+- ✅ Professional React UI with real-time WebSocket updates, custom logo, and report viewing/downloading
+- ✅ Report viewing in browser (HTML in iframe) + Download dropdown (HTML/Markdown/JSON)
+- ✅ Staging Deployer Agent creates Git branches and PRs for human review (not actual deployment to runtime environments)
+- ✅ Migration ID state management fix for proper API calls
 
 ## How to Run
 
@@ -208,32 +211,32 @@ The system follows a microservices architecture with the following components:
 
 ### Frontend Setup
 
-1. **Navigate to frontend directory**:
+1. **Navigate to React app directory**:
    ```bash
-   cd ../frontend
+   cd ../reactapp
    ```
 
 2. **Serve the frontend with a local web server** (recommended):
 
    **Option 1: Using Python's built-in server:**
    ```bash
-   cd frontend
+   cd reactapp
    python -m http.server 5500
    ```
    Then open http://localhost:5500 in your browser
 
    **Option 2: Using Node's http-server:**
    ```bash
-   cd frontend
+   cd reactapp
    npx http-server
    ```
    Then open the provided URL in your browser
 
    **Option 3: Using Live Server extension in VS Code:**
-   - Right-click `index.html` and select "Open with Live Server"
+   - Right-click `public/index.html` and select "Open with Live Server"
 
 3. **Alternative: Direct file access** (requires backend CORS configuration):
-   - Simply double-click the `index.html` file or open it with your preferred browser
+   - Simply double-click the `public/index.html` file or open it with your preferred browser
    - Note: You will encounter CORS issues when making API calls from file:// protocol
    - To resolve this, set `CORS_ALLOW_ALL=true` in your `.env` file in the backend directory:
      ```
@@ -241,7 +244,7 @@ The system follows a microservices architecture with the following components:
      ```
    - Then restart the backend server
 
-4. **Frontend Documentation**: See `frontend/README.md` for detailed frontend-specific instructions
+4. **Frontend Documentation**: See `reactapp/CLAUDE.md` for detailed frontend-specific instructions
 
 ### API Documentation
 API documentation is available at: `http://localhost:8000/docs`
@@ -253,13 +256,14 @@ API documentation is available at: `http://localhost:8000/docs`
 
 ### Migration Management
 - `POST /api/migrations/start` - Start new migration workflow
-- `GET /api/migrations/{migration_id}` - Get specific migration status
+- `GET /api/migrations/{migration_id}` - Get specific migration status with report links
 - `GET /api/migrations` - List all migrations with pagination
-- `GET /api/migrations/{migration_id}/report` - Download migration report
+- `GET /api/migrations/{migration_id}/report?type=html|markdown|json` - Download migration report (file download)
+- `GET /api/migrations/{migration_id}/report_content?type=html|markdown|json` - Get report content (JSON response for viewing)
 - `DELETE /api/migrations/{migration_id}` - Delete a migration record
 
 ### WebSocket
-- `WS /ws/migrations/{migration_id}` - Real-time migration updates
+- `WS /ws/migrations/{migration_id}` - Real-time migration updates with structured messages
 
 ## WebSocket Streaming
 
@@ -291,21 +295,24 @@ The application includes WebSocket support for real-time updates during migratio
 
 ## Frontend UI
 
-The frontend UI provides a complete interface for:
+The React frontend UI provides a complete interface for:
 
-1. Starting new migrations
+1. Starting new migrations with project configuration
 2. Monitoring real-time progress via WebSocket
-3. Viewing migration details and status
-4. Accessing generated reports when available
+3. Viewing migration details and status with live updates
+4. Viewing reports directly in browser (HTML in iframe)
+5. Downloading reports in multiple formats (HTML/Markdown/JSON)
 
 ### Features
-- Professional ribbon with logo and user icon
-- Migration form with project configuration
-- Real-time status indicator
-- Progress bar visualization
-- WebSocket log viewer with color-coded messages
-- Report viewer with embedded iframe
-- Responsive design for all device sizes
+- ✅ Professional ribbon with custom logo and user icon
+- ✅ Migration form with project configuration (path, type, retries, git branch)
+- ✅ Real-time status indicator with color-coded states (active/success/error)
+- ✅ Progress bar visualization (0-100%)
+- ✅ WebSocket log viewer with color-coded messages and auto-scroll
+- ✅ **View Report** button - Displays HTML report in iframe
+- ✅ **Download Report** dropdown - Three format options (HTML/Markdown/JSON)
+- ✅ Responsive design for all device sizes (mobile/tablet/desktop)
+- ✅ Proper state management with migration ID bug fix
 
 ## Development
 

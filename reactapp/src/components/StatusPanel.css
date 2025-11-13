@@ -1,0 +1,11 @@
+.migration-details {
+  margin-top: 1rem;
+}
+
+.migration-details p {
+  margin-bottom: 0.5rem;
+}
+
+.migration-details strong {
+  color: var(--dark);
+}

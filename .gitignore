@@ -209,6 +209,8 @@ __marimo__/
 reports
 /backend/reports
 
+reactapp/node_modules
+/reactapp/build/
 
 
 

@@ -498,9 +498,13 @@ async def get_migration_status(migration_id: str):
                 "json": matching_reports[0].replace('.html', '.json')
             }
 
-    # Add report content endpoint
+    # Add report content API links (individual format endpoints)
     if migration.get("report_files"):
-        response["reports_content"] = f"/api/migrations/{migration_id}/content"
+        response["reports_content"] = {
+            "html": f"/api/migrations/{migration_id}/report_content?type=html",
+            "markdown": f"/api/migrations/{migration_id}/report_content?type=markdown",
+            "json": f"/api/migrations/{migration_id}/report_content?type=json"
+        }
 
     return response
 
@@ -591,6 +595,66 @@ async def get_migration_content(migration_id: str, type: str = "all"):
         except Exception as e:
             logger.error(f"Error reading {type} report file: {e}")
             raise HTTPException(status_code=500, detail=f"Error reading {type} report file")
+
+
+@app.get("/api/migrations/{migration_id}/report_content")
+async def get_migration_report_content(migration_id: str, type: str = "html"):
+    """Get content of a specific migration report format.
+
+    This endpoint returns the actual content of the report in the requested format,
+    suitable for direct display in the browser.
+
+    Args:
+        migration_id: Unique migration ID
+        type: Report type - 'html', 'markdown', or 'json' (default: 'html')
+
+    Returns:
+        JSON response with report content
+
+    Raises:
+        HTTPException: If migration ID not found or reports not available
+    """
+    if migration_id not in migrations_db:
+        raise HTTPException(status_code=404, detail=f"Migration not found: {migration_id}")
+
+    migration = migrations_db[migration_id]
+
+    # Check if reports are available
+    if not migration.get("report_files"):
+        raise HTTPException(
+            status_code=404,
+            detail="Report files not available yet. Migration may still be running or failed before completion."
+        )
+
+    # Validate report type
+    valid_types = ["html", "markdown", "json"]
+    if type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid report type. Must be one of: {', '.join(valid_types)}"
+        )
+
+    # Get file path
+    report_files = migration["report_files"]
+    file_path = report_files.get(type)
+
+    if not file_path or not Path(file_path).exists():
+        raise HTTPException(status_code=404, detail=f"Report file not found for type: {type}")
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        return {
+            "migration_id": migration_id,
+            "status": migration["status"],
+            "type": type,
+            "content": content,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error reading {type} report file: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reading {type} report file: {str(e)}")
 
 
 @app.get("/api/migrations")
