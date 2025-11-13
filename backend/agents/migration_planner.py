@@ -124,11 +124,49 @@ Be thorough, accurate, and prioritize safety."""
             print(analysis_prompt)
             print("="*50)
 
+            # Send an update about the LLM interaction (without full prompt to avoid large messages)
+            self.send_update(
+                message="Sending analysis prompt to LLM",
+                message_type="llm_interaction",
+                extra_data={
+                    "prompt_preview": analysis_prompt[:200]  # Just send a preview to avoid large messages
+                }
+            )
+            
+            # Send full prompt separately if needed for debugging
+            if len(analysis_prompt) > 200:
+                self.send_update(
+                    message="Full analysis prompt",
+                    message_type="debug_prompt",
+                    extra_data={
+                        "full_prompt": analysis_prompt
+                    }
+                )
+
             llm_response = self.think(analysis_prompt, max_tokens=4000)
 
             print("RESPONSE RECEIVED FROM LLM:")
             print(llm_response)
             print("="*50)
+
+            # Send an update about the LLM response (without full response to avoid large messages)
+            self.send_update(
+                message="Received response from LLM",
+                message_type="llm_response",
+                extra_data={
+                    "response_preview": llm_response[:200]  # Just send a preview to avoid large messages
+                }
+            )
+            
+            # Send full response separately if needed for debugging
+            if len(llm_response) > 200:
+                self.send_update(
+                    message="Full LLM response",
+                    message_type="debug_response",
+                    extra_data={
+                        "full_response": llm_response
+                    }
+                )
 
             self.logger.info("llm_response_received", response_length=len(llm_response))
 

@@ -7,18 +7,22 @@ import logging
 from datetime import datetime
 import os
 
-# Configure logging to write all websocket messages to a single file
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('websocket_messages.log'),
-        logging.StreamHandler()  # Also output to console for debugging
-    ]
-)
-websocket_logger = logging.getLogger('websocket_messages')
-
 logger = setup_logger(__name__)
+
+# Create a specific logger for websocket messages
+websocket_logger = logging.getLogger('websocket_messages')
+websocket_logger.setLevel(logging.INFO)
+
+# Create file handler which logs even debug messages
+fh = logging.FileHandler('websocket_messages.log')
+fh.setLevel(logging.INFO)
+
+# Create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+
+# Add the handlers to the logger
+websocket_logger.addHandler(fh)
 
 class ConnectionManager:
     def __init__(self):
@@ -30,6 +34,9 @@ class ConnectionManager:
             self.active_connections[migration_id] = set()
         self.active_connections[migration_id].add(websocket)
         logger.info(f"WebSocket connected for migration {migration_id}")
+        
+        # Log the connection event
+        websocket_logger.info(f"[{migration_id}] CONNECTION: WebSocket connected")
 
     def disconnect(self, websocket: WebSocket, migration_id: str):
         if migration_id in self.active_connections:
@@ -37,6 +44,9 @@ class ConnectionManager:
             if not self.active_connections[migration_id]:  # Remove empty sets
                 del self.active_connections[migration_id]
             logger.info(f"WebSocket disconnected for migration {migration_id}")
+            
+            # Log the disconnection event
+            websocket_logger.info(f"[{migration_id}] DISCONNECTION: WebSocket disconnected")
 
     async def send_personal_message(self, message: str, websocket: WebSocket):
         await websocket.send_text(message)
