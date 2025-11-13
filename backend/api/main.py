@@ -44,8 +44,8 @@ if os.getenv("CORS_ALLOW_ALL", "").lower() == "true":
     cors_origins = ["*"]
     allow_credentials = False
 else:
-    # Default to allowing common local development origins
-    cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500,http://localhost:5500").split(",")
+    # Default to allowing common local development origins including React dev servers
+    cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:4000,http://127.0.0.1:5500,http://localhost:5500").split(",")
     allow_credentials = True
 
 app.add_middleware(
@@ -498,7 +498,99 @@ async def get_migration_status(migration_id: str):
                 "json": matching_reports[0].replace('.html', '.json')
             }
 
+    # Add report content endpoint
+    if migration.get("report_files"):
+        response["reports_content"] = f"/api/migrations/{migration_id}/content"
+
     return response
+
+
+@app.get("/api/migrations/{migration_id}/content")
+async def get_migration_content(migration_id: str, type: str = "all"):
+    """Get content of migration reports.
+
+    Args:
+        migration_id: Unique migration ID
+        type: Report type - 'html', 'markdown', 'json', or 'all' (default: 'all')
+
+    Returns:
+        Content of requested report format(s)
+
+    Raises:
+        HTTPException: If migration ID not found or reports not available
+    """
+    if migration_id not in migrations_db:
+        raise HTTPException(status_code=404, detail=f"Migration not found: {migration_id}")
+
+    migration = migrations_db[migration_id]
+
+    # Check if reports are available
+    if not migration.get("report_files"):
+        raise HTTPException(
+            status_code=404,
+            detail="Report files not available yet. Migration may still be running or failed before completion."
+        )
+
+    # Validate report type
+    valid_types = ["html", "markdown", "json", "all"]
+    if type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid report type. Must be one of: {', '.join(valid_types)}"
+        )
+
+    if type == "all":
+        report_content = {
+            "html": "",
+            "markdown": "",
+            "json": ""
+        }
+
+        # Read all report files content
+        report_files = migration["report_files"]
+        
+        for format_type, file_path in report_files.items():
+            try:
+                if Path(file_path).exists():
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        
+                        # Store content based on file extension
+                        if file_path.endswith('.html'):
+                            report_content['html'] = content
+                        elif file_path.endswith('.md'):
+                            report_content['markdown'] = content
+                        elif file_path.endswith('.json'):
+                            report_content['json'] = content
+            except Exception as e:
+                logger.warning(f"Error reading report file: {e}")
+        
+        return {
+            "migration_id": migration_id,
+            "status": migration["status"],
+            "content": report_content
+        }
+    else:
+        # Return content for specific type only
+        report_files = migration["report_files"]
+        file_path = report_files.get(type)
+        
+        if not file_path or not Path(file_path).exists():
+            raise HTTPException(status_code=404, detail=f"Report file not found for type: {type}")
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            return {
+                "migration_id": migration_id,
+                "status": migration["status"],
+                "type": type,
+                "content": content
+            }
+        except Exception as e:
+            logger.error(f"Error reading {type} report file: {e}")
+            raise HTTPException(status_code=500, detail=f"Error reading {type} report file")
 
 
 @app.get("/api/migrations")

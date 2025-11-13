@@ -105,8 +105,43 @@ Be thorough and prioritize correctness."""
                            project_type=project_type,
                            has_migration_plan=migration_plan is not None)
 
+            # Send initial update about validation start
+            self.send_update(
+                message=f"Starting runtime validation for {project_type} project",
+                message_type="agent_start",
+                extra_data={
+                    "project_path": project_path,
+                    "project_type": project_type
+                }
+            )
+
+            # Send update about migration plan if available
+            if migration_plan:
+                # Send update about dependencies being tested
+                dependencies = migration_plan.get("dependencies", {})
+                dep_list = []
+                for pkg_name, dep_info in dependencies.items():
+                    current = dep_info.get("current_version", "unknown")
+                    target = dep_info.get("target_version", "unknown")
+                    dep_list.append(f"{pkg_name}: {current} → {target}")
+                
+                self.send_update(
+                    message=f"Testing {len(dependencies)} dependency upgrades",
+                    message_type="validation_info",
+                    extra_data={
+                        "dependencies": dep_list,
+                        "total_dependencies": len(dependencies)
+                    }
+                )
+
             # Create Docker validator
             validator = DockerValidator(timeout=timeout)
+
+            self.send_update(
+                message="Creating Docker container for validation",
+                message_type="validation_info",
+                extra_data={"status": "creating_container"}
+            )
 
             # Run validation
             validation_result = validator.validate_project(
@@ -123,6 +158,20 @@ Be thorough and prioritize correctness."""
                            health_check=validation_result["health_check_success"],
                            tests_run=validation_result["tests_run"],
                            tests_passed=validation_result["tests_passed"])
+
+            # Send updates about validation results
+            self.send_update(
+                message="Docker validation completed",
+                message_type="validation_result",
+                extra_data={
+                    "build_success": validation_result["build_success"],
+                    "install_success": validation_result["install_success"],
+                    "runtime_success": validation_result["runtime_success"],
+                    "health_check_success": validation_result["health_check_success"],
+                    "tests_run": validation_result["tests_run"],
+                    "tests_passed": validation_result["tests_passed"]
+                }
+            )
 
             # Analyze results with LLM
             # Skip LLM analysis if validation was clearly successful
@@ -150,8 +199,18 @@ Be thorough and prioritize correctness."""
                 }
                 self.logger.info("validation_success_without_llm",
                                tests_configured=validation_result["tests_run"])
+                
+                # Send success update
+                self.send_update(
+                    message="All validation checks passed successfully",
+                    message_type="validation_success"
+                )
             else:
                 # Validation had issues - use LLM for analysis
+                self.send_update(
+                    message="Validation issues detected, analyzing with LLM",
+                    message_type="validation_analysis"
+                )
                 analysis = self._analyze_validation_results(validation_result, migration_plan)
 
             # Cleanup
@@ -207,10 +266,29 @@ Be thorough and prioritize correctness."""
                 cleaned = "\n".join(lines[1:-1]) if len(lines) > 2 else cleaned
 
             analysis = json.loads(cleaned)
+            
+            # Send update about analysis results
+            self.send_update(
+                message="LLM analysis complete",
+                message_type="analysis_complete",
+                extra_data={
+                    "validation_status": analysis.get("validation_status", "unknown"),
+                    "recommendation": analysis.get("recommendation", "unknown"),
+                    "confidence": analysis.get("confidence", "unknown")
+                }
+            )
+            
             return analysis
 
         except json.JSONDecodeError as e:
             self.logger.error("json_parse_error", error=str(e), response=llm_response[:500])
+
+            # Send error update
+            self.send_update(
+                message="Error parsing LLM analysis, using fallback",
+                message_type="analysis_error",
+                extra_data={"error": str(e)}
+            )
 
             # Return fallback analysis based on validation result
             return self._fallback_analysis(validation_result)
@@ -293,6 +371,16 @@ No markdown, no explanations outside JSON."""
             Basic analysis dict
         """
         validation_success = validation_result.get("status") == "success"
+
+        # Send update about fallback analysis
+        self.send_update(
+            message="Using fallback analysis due to LLM parsing error",
+            message_type="fallback_analysis",
+            extra_data={
+                "validation_success": validation_success,
+                "errors_count": len(validation_result.get("errors", []))
+            }
+        )
 
         return {
             "validation_status": "success" if validation_success else "failed",

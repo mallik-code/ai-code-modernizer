@@ -111,6 +111,16 @@ Be thorough, safe, and provide clear guidance."""
                            base_branch=base_branch,
                            create_pr=create_pr)
 
+            # Send initial update about deployment start
+            self.send_update(
+                message="Starting staging deployment",
+                message_type="agent_start",
+                extra_data={
+                    "project_path": project_path,
+                    "base_branch": base_branch
+                }
+            )
+
             # Change to project directory
             project_dir = Path(project_path)
             if not project_dir.exists():
@@ -119,31 +129,121 @@ Be thorough, safe, and provide clear guidance."""
                     "error": f"Project path does not exist: {project_path}"
                 }
 
+            # Send update about dependency changes
+            if migration_plan and "dependencies" in migration_plan:
+                dependencies = migration_plan["dependencies"]
+                dep_changes = []
+                for pkg_name, dep_info in dependencies.items():
+                    current = dep_info.get("current_version", "unknown")
+                    target = dep_info.get("target_version", "unknown")
+                    action = dep_info.get("action", "unknown")
+                    dep_changes.append(f"{pkg_name}: {current} → {target} ({action})")
+                
+                self.send_update(
+                    message=f"Planning to update {len(dependencies)} dependencies",
+                    message_type="deployment_info",
+                    extra_data={
+                        "dependencies": dep_changes,
+                        "total_dependencies": len(dependencies)
+                    }
+                )
+
             # Generate branch name
             branch_name = self._generate_branch_name(migration_plan)
             self.logger.info("branch_name_generated", branch_name=branch_name)
+            
+            # Send update about branch creation
+            self.send_update(
+                message=f"Creating branch '{branch_name}' from '{base_branch}'",
+                message_type="branch_creation",
+                extra_data={
+                    "branch_name": branch_name,
+                    "base_branch": base_branch
+                }
+            )
 
             # Create Git branch
             branch_result = self._create_branch(project_dir, branch_name, base_branch)
             if "error" in branch_result:
                 return branch_result
+            
+            # Send success update for branch creation
+            self.send_update(
+                message=f"Successfully created branch '{branch_name}'",
+                message_type="branch_created"
+            )
 
             # Update files
+            self.send_update(
+                message="Updating dependency files",
+                message_type="file_update"
+            )
+            
             files_updated = self._update_dependency_files(project_dir, migration_plan)
             self.logger.info("files_updated", count=len(files_updated), files=files_updated)
 
+            # Send update about which files were updated
+            self.send_update(
+                message=f"Updated {len(files_updated)} files",
+                message_type="files_updated",
+                extra_data={
+                    "files": files_updated,
+                    "file_count": len(files_updated)
+                }
+            )
+
             # Generate commit message
             commit_message = self._generate_commit_message(migration_plan, validation_result)
+            
+            # Send update about committing changes
+            self.send_update(
+                message="Committing changes to branch",
+                message_type="commit_start",
+                extra_data={
+                    "commit_message": commit_message[:100] + "..." if len(commit_message) > 100 else commit_message
+                }
+            )
 
             # Commit changes
             commit_result = self._commit_changes(project_dir, commit_message, files_updated)
             if "error" in commit_result:
                 return commit_result
+            
+            # Send success update for commit
+            self.send_update(
+                message=f"Changes committed successfully",
+                message_type="commit_complete",
+                extra_data={
+                    "commit_sha": commit_result.get("commit_sha", "unknown")
+                }
+            )
+
+            # Send update about pushing branch
+            self.send_update(
+                message=f"Pushing branch '{branch_name}' to remote",
+                message_type="push_start",
+                extra_data={
+                    "branch_name": branch_name
+                }
+            )
 
             # Push branch
             push_result = self._push_branch(project_dir, branch_name)
             if "error" in push_result:
                 return push_result
+            
+            # Send success update for push
+            self.send_update(
+                message=f"Successfully pushed branch '{branch_name}'",
+                message_type="push_complete"
+            )
+
+            # Send update about PR creation if requested
+            if create_pr:
+                self.send_update(
+                    message="Creating pull request",
+                    message_type="pr_creation"
+                )
 
             # Create PR if requested
             pr_result = {}
@@ -155,6 +255,17 @@ Be thorough, safe, and provide clear guidance."""
                     base_branch,
                     pr_description
                 )
+            
+            # Send final update if PR was created
+            if create_pr and pr_result and pr_result.get("pr_url"):
+                self.send_update(
+                    message="Pull request created successfully",
+                    message_type="pr_complete",
+                    extra_data={
+                        "pr_url": pr_result["pr_url"],
+                        "pr_number": pr_result.get("pr_number")
+                    }
+                )
 
             # Log cost
             cost_report = self.llm.cost_tracker.get_report()
@@ -164,6 +275,18 @@ Be thorough, safe, and provide clear guidance."""
                            pr_created=create_pr,
                            cost_usd=cost_report["total_cost_usd"])
 
+            # Send final completion update
+            self.send_update(
+                message="Staging deployment completed successfully",
+                message_type="deployment_complete",
+                extra_data={
+                    "branch_name": branch_name,
+                    "files_updated": files_updated,
+                    "pr_url": pr_result.get("pr_url"),
+                    "pr_number": pr_result.get("pr_number")
+                }
+            )
+            
             return {
                 "status": "success",
                 "branch_name": branch_name,
