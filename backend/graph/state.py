@@ -3,7 +3,7 @@
 This module defines the state that flows through the multi-agent workflow.
 """
 
-from typing import TypedDict, Optional, Dict, List, Any
+from typing import TypedDict, Optional, Dict, List, Any, Callable
 from typing_extensions import Annotated
 from langgraph.graph import add_messages
 
@@ -45,6 +45,9 @@ class MigrationState(TypedDict, total=False):
         # Cost Tracking
         total_cost: Total cost of all LLM calls in workflow
         agent_costs: Dictionary of costs per agent
+        
+        # Real-time updates
+        broadcaster: Optional[Callable]
     """
 
     # Project information
@@ -79,6 +82,9 @@ class MigrationState(TypedDict, total=False):
     # Cost Tracking
     total_cost: float
     agent_costs: Dict[str, float]
+    
+    # Real-time updates
+    broadcaster: Optional[Callable]
 
 
 def create_initial_state(project_path: str, project_type: str = "nodejs", max_retries: int = 3, git_branch: str = "main") -> MigrationState:
@@ -112,7 +118,8 @@ def create_initial_state(project_path: str, project_type: str = "nodejs", max_re
         errors=[],
         messages=[],
         total_cost=0.0,
-        agent_costs={}
+        agent_costs={},
+        broadcaster=None
     )
 
 

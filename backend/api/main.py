@@ -11,15 +11,20 @@ from typing import Optional, List
 from pathlib import Path
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import threading
 
+import json
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from fastapi import WebSocket, WebSocketDisconnect
 
 from graph.workflow import run_workflow
+from graph.helpers import create_initial_state_with_broadcaster
 from utils.logger import setup_logger
 from utils.report_generator import ReportGenerator
+from api.websocket_manager import manager
 
 logger = setup_logger(__name__)
 
@@ -133,13 +138,31 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
         # Update status to running
         migrations_db[migration_id]["status"] = "running"
 
-        # Execute workflow
+        # Create a partial function for broadcasting
+        def broadcast_update(msg):
+            # Since this runs in a thread, we need to handle event loops properly
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        manager.broadcast(msg, migration_id),
+                        loop
+                    )
+                else:
+                    # If loop is not running, run it briefly
+                    asyncio.run(manager.broadcast(msg, migration_id))
+            except RuntimeError:
+                # If there's no running loop, create a temporary one
+                asyncio.run(manager.broadcast(msg, migration_id))
+
+        # Execute workflow with broadcaster
         final_state = run_workflow(
             project_path=project_path,
             project_type=project_type,
             max_retries=max_retries,
             git_branch=git_branch,
-            github_token=github_token
+            github_token=github_token,
+            broadcaster=broadcast_update
         )
 
         # Extract results
@@ -607,6 +630,33 @@ async def delete_migration(migration_id: str):
     return {
         "message": f"Migration {migration_id} deleted successfully"
     }
+
+
+# ============================================================================
+# WebSocket Endpoint
+# ============================================================================
+
+@app.websocket("/ws/migrations/{migration_id}")
+async def migration_progress(websocket: WebSocket, migration_id: str):
+    """WebSocket endpoint for real-time migration updates."""
+    await manager.connect(websocket, migration_id)
+    try:
+        # Send a connection confirmation
+        await websocket.send_text(json.dumps({
+            "type": "connection",
+            "message": "Connected to migration updates",
+            "migration_id": migration_id,
+            "timestamp": datetime.now().isoformat()
+        }))
+        
+        while True:
+            # Keep the connection alive
+            data = await websocket.receive_text()
+            # Could handle client messages here if needed, for now just acknowledge
+            # In a more complex implementation, this could include commands to the server
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, migration_id)
+        logger.info(f"WebSocket disconnected for migration {migration_id}")
 
 
 # ============================================================================

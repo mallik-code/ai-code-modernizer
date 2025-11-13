@@ -24,7 +24,7 @@ from agents.base import BaseAgent
 class ErrorAnalyzerAgent(BaseAgent):
     """Agent for analyzing validation errors and generating fixes."""
 
-    def __init__(self, llm_provider: Optional[str] = None, llm_model: Optional[str] = None):
+    def __init__(self, llm_provider: Optional[str] = None, llm_model: Optional[str] = None, broadcaster=None):
         system_prompt = """You are an expert software error analyst and debugger.
 
 Your role:
@@ -94,7 +94,8 @@ Be thorough, specific, and provide actionable fixes."""
             name="error_analyzer",
             system_prompt=system_prompt,
             llm_provider=llm_provider,
-            llm_model=llm_model
+            llm_model=llm_model,
+            broadcaster=broadcaster
         )
 
     def execute(self, input_data: Dict) -> Dict:

@@ -12,6 +12,9 @@ The AI Code Modernizer Backend is a sophisticated Python application that levera
 - **Real-time Updates**: WebSocket-based communication for live progress monitoring
 - **Cost Tracking**: Built-in token usage and cost monitoring for LLM operations
 - **Comprehensive Security**: Multiple security layers including input validation, rate limiting, and human approval requirements
+- **Git Branch Management**: Support for specifying target branches for migration consistency
+- **GitHub Integration**: Enhanced GitHub operations with token-based authentication
+- **Enhanced Reporting**: Comprehensive HTML/Markdown/JSON reports with workflow execution details and AI insights
 
 ## Architecture
 
@@ -44,8 +47,12 @@ The system supports multiple LLM providers through a flexible factory pattern:
 ### Core Components
 - **MCP Tool Manager** (`tools/mcp_tools.py`) - Manages connections to MCP servers and exposes tools for file operations and GitHub integration
 - **LangGraph Workflow** ✅ (`graph/workflow.py`) - Orchestrates all 4 agents in a stateful workflow with conditional routing, retry logic (up to 3 attempts), and automatic error recovery. Routes validation failures to Error Analyzer, retries with fixes, and deploys successful upgrades via Staging Deployer.
+- **State Management** (`graph/state.py`) - Enhanced state schema with additional fields for git_branch tracking, github_token support, and improved branch_name handling
 - **Cost Tracker** (`utils/cost_tracker.py`) - Automatically tracks token usage and costs for LLM operations across all providers
 - **Docker Validator** (`tools/docker_tools.py`) - Handles containerized validation of code changes
+- **Git Branch Management** - Enhanced workflow with support for specifying source branches and tracking target branches
+- **GitHub Token Integration** - Secure GitHub operations with token-based authentication for PR creation and repository access
+- **Enhanced Report Generator** - Comprehensive reporting with workflow execution diagrams, agent performance metrics, and AI decision insights
 
 ## Building and Running
 
@@ -189,9 +196,39 @@ See `TESTING_GUIDE.md` for complete documentation including:
 ### Key Endpoints
 - `GET /api/health` - Health check
 - `GET /api/` - Root endpoint
-- `POST /api/projects/analyze` - Analyze project dependencies
-- `POST /api/projects/upgrade` - Start upgrade workflow
-- `GET /api/projects/{id}/status` - Get workflow status
+- `POST /api/migrations/start` - Start migration workflow with support for:
+  - `project_path` - Path to local project
+  - `project_type` - 'nodejs' or 'python'
+  - `max_retries` - Maximum retry attempts
+  - `git_branch` - Git branch to use for migration (default: 'main')
+  - `github_token` - GitHub Personal Access Token for API operations (optional)
+- `GET /api/migrations/{migration_id}` - Get workflow status
+- `GET /api/migrations` - List all migrations with pagination
+- `GET /api/migrations/{migration_id}/report` - Download comprehensive reports
+- `DELETE /api/migrations/{migration_id}` - Delete a migration record
+
+## Enhanced Features
+
+### Git Branch Management
+- The system now supports specifying a specific branch for migration via the `git_branch` parameter
+- Automatically checks out the specified branch before starting the migration
+- Creates upgrade branches from the specified baseline for consistent results
+- Tracks source and target branches in migration reports
+
+### GitHub Token Integration
+- Added support for GitHub Personal Access Token via the `github_token` parameter
+- Token is securely passed through the workflow to enable authenticated GitHub operations
+- Allows for actual GitHub API calls instead of mock responses when creating pull requests
+- Enables proper PR links in migration reports
+
+### Improved Migration Reports
+- Enhanced HTML/Markdown/JSON reports with more detailed information
+- Clear tracking of source branch → target branch transitions
+- Detailed breakdown of test results and validation outcomes
+- Workflow execution diagrams showing the 4-agent process
+- Agent execution summaries with costs and details
+- AI/LLM insights explaining decision-making processes
+- Comprehensive dependency analysis with breaking changes details
 
 ## Environment Variables
 
@@ -247,6 +284,17 @@ MAX_RETRY_ATTEMPTS=3
 ENABLE_STAGING_DEPLOYMENT=true
 ENABLE_AUTO_FIX=true
 ```
+
+## Migration Request Parameters
+
+The `/api/migrations/start` endpoint now accepts the following parameters:
+
+- **project_path** (required): Absolute or relative path to the project
+- **project_type** (required): 'nodejs' or 'python'
+- **max_retries** (optional): Maximum retry attempts for failed validations (default: 3)
+- **git_branch** (optional): Git branch to use for the migration (default: 'main')
+- **github_token** (optional): GitHub Personal Access Token for API operations
+- **options** (optional): Additional options dictionary
 
 ## Key Dependencies
 

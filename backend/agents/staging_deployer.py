@@ -25,7 +25,7 @@ from agents.base import BaseAgent
 class StagingDeployerAgent(BaseAgent):
     """Agent for deploying validated dependency upgrades via GitHub PRs."""
 
-    def __init__(self, llm_provider: Optional[str] = None, llm_model: Optional[str] = None):
+    def __init__(self, llm_provider: Optional[str] = None, llm_model: Optional[str] = None, broadcaster=None):
         system_prompt = """You are an expert software deployment specialist.
 
 Your role:
@@ -69,7 +69,8 @@ Be thorough, safe, and provide clear guidance."""
             name="staging_deployer",
             system_prompt=system_prompt,
             llm_provider=llm_provider,
-            llm_model=llm_model
+            llm_model=llm_model,
+            broadcaster=broadcaster
         )
 
     def execute(self, input_data: Dict) -> Dict:

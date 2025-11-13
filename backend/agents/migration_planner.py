@@ -24,7 +24,7 @@ from utils.package_registry import PackageRegistry
 class MigrationPlannerAgent(BaseAgent):
     """Agent for analyzing dependencies and planning migration strategies."""
 
-    def __init__(self, llm_provider: Optional[str] = None, llm_model: Optional[str] = None):
+    def __init__(self, llm_provider: Optional[str] = None, llm_model: Optional[str] = None, broadcaster=None):
         system_prompt = """You are an expert software dependency migration planner.
 
 Your role:
@@ -81,7 +81,8 @@ Be thorough, accurate, and prioritize safety."""
             name="migration_planner",
             system_prompt=system_prompt,
             llm_provider=llm_provider,
-            llm_model=llm_model
+            llm_model=llm_model,
+            broadcaster=broadcaster
         )
 
     def execute(self, input_data: Dict) -> Dict:

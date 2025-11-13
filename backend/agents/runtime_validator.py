@@ -22,7 +22,7 @@ from tools.docker_tools import DockerValidator
 class RuntimeValidatorAgent(BaseAgent):
     """Agent for validating dependency upgrades in Docker containers."""
 
-    def __init__(self, llm_provider: Optional[str] = None, llm_model: Optional[str] = None):
+    def __init__(self, llm_provider: Optional[str] = None, llm_model: Optional[str] = None, broadcaster=None):
         system_prompt = """You are an expert runtime validation specialist.
 
 Your role:
@@ -65,7 +65,8 @@ Be thorough and prioritize correctness."""
             name="runtime_validator",
             system_prompt=system_prompt,
             llm_provider=llm_provider,
-            llm_model=llm_model
+            llm_model=llm_model,
+            broadcaster=broadcaster
         )
 
     def execute(self, input_data: Dict) -> Dict:

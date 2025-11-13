@@ -1,0 +1,144 @@
+{
+  "info": {
+    "_postman_id": "AI-Code-Modernizer-API-Collection",
+    "name": "AI Code Modernizer API",
+    "description": "API for automated dependency upgrades with multi-agent workflow. Note: WebSocket endpoint /ws/migrations/{migration_id} requires a separate WebSocket client for testing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "health"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Start Migration",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"project_path\": \"target_repos/simple_express_app\",\n  \"project_type\": \"nodejs\",\n  \"max_retries\": 3,\n  \"git_branch\": \"main\",\n  \"github_token\": \"ghp_xxxxxxxxxxxxx\",\n  \"options\": {\n    \"create_pr\": true,\n    \"run_tests\": true\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/migrations/start",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "migrations", "start"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Migration Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/migrations/{{migrationId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "migrations", "{{migrationId}}"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List Migrations",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/migrations?limit=10&offset=0",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "migrations"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "offset",
+              "value": "0"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Download Migration Report",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/migrations/{{migrationId}}/report?type=html",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "migrations", "{{migrationId}}", "report"],
+          "query": [
+            {
+              "key": "type",
+              "value": "html"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Delete Migration",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/migrations/{{migrationId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "migrations", "{{migrationId}}"]
+        }
+      },
+      "response": []
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [""]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [""]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "migrationId",
+      "value": "mig_abc123def456"
+    }
+  ]
+}

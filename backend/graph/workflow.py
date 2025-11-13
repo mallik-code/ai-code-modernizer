@@ -10,6 +10,8 @@ The workflow includes conditional routing and retry logic.
 """
 
 from typing import Dict, Any, Literal, Optional
+from datetime import datetime
+import json
 from langgraph.graph import StateGraph, END
 from graph.state import MigrationState, create_initial_state
 from agents.migration_planner import MigrationPlannerAgent
@@ -36,9 +38,18 @@ def migration_planner_node(state: MigrationState) -> MigrationState:
     """
     logger.info("executing_migration_planner", project_path=state["project_path"])
 
+    # Send workflow status update
+    if state.get("broadcaster"):
+        state["broadcaster"](json.dumps({
+            "type": "workflow_status",
+            "status": "executing_migration_planner",
+            "message": "Starting migration planning...",
+            "timestamp": datetime.now().isoformat()
+        }))
+
     try:
-        # Create agent
-        agent = MigrationPlannerAgent()
+        # Create agent with broadcaster
+        agent = MigrationPlannerAgent(broadcaster=state.get("broadcaster"))
 
         # Execute planning
         result = agent.execute({
@@ -52,6 +63,17 @@ def migration_planner_node(state: MigrationState) -> MigrationState:
             logger.info("migration_plan_created",
                        dependencies_count=len(result["migration_plan"].get("dependencies", {})))
 
+            # Send completion update
+            if state.get("broadcaster"):
+                state["broadcaster"](json.dumps({
+                    "type": "agent_completion",
+                    "agent": "migration_planner",
+                    "status": "success",
+                    "message": "Migration plan created successfully",
+                    "dependencies_count": len(result["migration_plan"].get("dependencies", {})),
+                    "timestamp": datetime.now().isoformat()
+                }))
+
             # Track cost
             if "cost_report" in result:
                 cost = result["cost_report"].get("total_cost_usd", 0)
@@ -63,10 +85,30 @@ def migration_planner_node(state: MigrationState) -> MigrationState:
             state["errors"].append(f"Migration planning failed: {result.get('error', 'Unknown error')}")
             logger.error("migration_planning_failed", error=result.get("error"))
 
+            # Send error update
+            if state.get("broadcaster"):
+                state["broadcaster"](json.dumps({
+                    "type": "agent_completion",
+                    "agent": "migration_planner",
+                    "status": "error",
+                    "error": result.get("error", "Unknown error"),
+                    "timestamp": datetime.now().isoformat()
+                }))
+
     except Exception as e:
         state["status"] = "error"
         state["errors"].append(f"Migration planner error: {str(e)}")
         logger.error("migration_planner_exception", error=str(e), exc_info=True)
+
+        # Send error update
+        if state.get("broadcaster"):
+            state["broadcaster"](json.dumps({
+                "type": "agent_completion",
+                "agent": "migration_planner",
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }))
 
     return state
 
@@ -82,9 +124,18 @@ def runtime_validator_node(state: MigrationState) -> MigrationState:
     """
     logger.info("executing_runtime_validator", project_path=state["project_path"])
 
+    # Send workflow status update
+    if state.get("broadcaster"):
+        state["broadcaster"](json.dumps({
+            "type": "workflow_status",
+            "status": "executing_runtime_validator",
+            "message": "Starting runtime validation...",
+            "timestamp": datetime.now().isoformat()
+        }))
+
     try:
-        # Create agent
-        agent = RuntimeValidatorAgent()
+        # Create agent with broadcaster
+        agent = RuntimeValidatorAgent(broadcaster=state.get("broadcaster"))
 
         # Execute validation
         result = agent.execute({
@@ -110,12 +161,35 @@ def runtime_validator_node(state: MigrationState) -> MigrationState:
         if state["validation_success"]:
             state["status"] = "validated"
             logger.info("validation_successful")
+            
+            # Send completion update
+            if state.get("broadcaster"):
+                state["broadcaster"](json.dumps({
+                    "type": "agent_completion",
+                    "agent": "runtime_validator",
+                    "status": "success",
+                    "message": "Runtime validation completed successfully",
+                    "timestamp": datetime.now().isoformat()
+                }))
         else:
             state["status"] = "validation_failed"
             logger.warning("validation_failed",
                           build=validation_data.get("build_success"),
                           install=validation_data.get("install_success"),
                           runtime=validation_data.get("runtime_success"))
+
+            # Send completion update with failure status
+            if state.get("broadcaster"):
+                state["broadcaster"](json.dumps({
+                    "type": "agent_completion",
+                    "agent": "runtime_validator",
+                    "status": "failed",
+                    "message": "Runtime validation failed",
+                    "build_success": validation_data.get("build_success"),
+                    "install_success": validation_data.get("install_success"),
+                    "runtime_success": validation_data.get("runtime_success"),
+                    "timestamp": datetime.now().isoformat()
+                }))
 
         # Track cost
         if "cost_report" in result:
@@ -128,6 +202,16 @@ def runtime_validator_node(state: MigrationState) -> MigrationState:
         state["validation_success"] = False
         state["errors"].append(f"Runtime validator error: {str(e)}")
         logger.error("runtime_validator_exception", error=str(e), exc_info=True)
+
+        # Send error update
+        if state.get("broadcaster"):
+            state["broadcaster"](json.dumps({
+                "type": "agent_completion",
+                "agent": "runtime_validator",
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }))
 
     return state
 
@@ -143,9 +227,18 @@ def error_analyzer_node(state: MigrationState) -> MigrationState:
     """
     logger.info("executing_error_analyzer", retry_count=state["retry_count"])
 
+    # Send workflow status update
+    if state.get("broadcaster"):
+        state["broadcaster"](json.dumps({
+            "type": "workflow_status",
+            "status": "executing_error_analyzer",
+            "message": "Starting error analysis...",
+            "timestamp": datetime.now().isoformat()
+        }))
+
     try:
-        # Create agent
-        agent = ErrorAnalyzerAgent()
+        # Create agent with broadcaster
+        agent = ErrorAnalyzerAgent(broadcaster=state.get("broadcaster"))
 
         # Execute analysis
         result = agent.execute({
@@ -162,6 +255,18 @@ def error_analyzer_node(state: MigrationState) -> MigrationState:
                        error_category=result["analysis"].get("error_category"),
                        suggestions_count=len(state["fix_suggestions"]))
 
+            # Send completion update
+            if state.get("broadcaster"):
+                state["broadcaster"](json.dumps({
+                    "type": "agent_completion",
+                    "agent": "error_analyzer",
+                    "status": "success",
+                    "message": "Error analysis completed",
+                    "error_category": result["analysis"].get("error_category"),
+                    "suggestions_count": len(state["fix_suggestions"]),
+                    "timestamp": datetime.now().isoformat()
+                }))
+
             # Track cost
             if "cost_report" in result:
                 cost = result["cost_report"].get("total_cost_usd", 0)
@@ -172,10 +277,31 @@ def error_analyzer_node(state: MigrationState) -> MigrationState:
             state["errors"].append(f"Error analysis failed: {result.get('error', 'Unknown error')}")
             logger.error("error_analysis_failed", error=result.get("error"))
 
+            # Send completion update with failure status
+            if state.get("broadcaster"):
+                state["broadcaster"](json.dumps({
+                    "type": "agent_completion",
+                    "agent": "error_analyzer",
+                    "status": "failed",
+                    "message": "Error analysis failed",
+                    "error": result.get("error", "Unknown error"),
+                    "timestamp": datetime.now().isoformat()
+                }))
+
     except Exception as e:
         state["status"] = "error"
         state["errors"].append(f"Error analyzer error: {str(e)}")
         logger.error("error_analyzer_exception", error=str(e), exc_info=True)
+
+        # Send error update
+        if state.get("broadcaster"):
+            state["broadcaster"](json.dumps({
+                "type": "agent_completion",
+                "agent": "error_analyzer",
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }))
 
     return state
 
@@ -191,9 +317,18 @@ def staging_deployer_node(state: MigrationState) -> MigrationState:
     """
     logger.info("executing_staging_deployer", project_path=state["project_path"])
 
+    # Send workflow status update
+    if state.get("broadcaster"):
+        state["broadcaster"](json.dumps({
+            "type": "workflow_status",
+            "status": "executing_staging_deployer",
+            "message": "Starting staging deployment...",
+            "timestamp": datetime.now().isoformat()
+        }))
+
     try:
-        # Create agent
-        agent = StagingDeployerAgent()
+        # Create agent with broadcaster
+        agent = StagingDeployerAgent(broadcaster=state.get("broadcaster"))
 
         # Execute deployment
         result = agent.execute({
@@ -214,6 +349,18 @@ def staging_deployer_node(state: MigrationState) -> MigrationState:
                        branch=state["branch_name"],
                        pr_url=state.get("pr_url"))
 
+            # Send completion update
+            if state.get("broadcaster"):
+                state["broadcaster"](json.dumps({
+                    "type": "agent_completion",
+                    "agent": "staging_deployer",
+                    "status": "success",
+                    "message": "Staging deployment completed",
+                    "branch": state["branch_name"],
+                    "pr_url": state.get("pr_url"),
+                    "timestamp": datetime.now().isoformat()
+                }))
+
             # Track cost (if any - Staging Deployer typically doesn't use LLM)
             if "cost_report" in result:
                 cost = result["cost_report"].get("total_cost_usd", 0)
@@ -224,10 +371,31 @@ def staging_deployer_node(state: MigrationState) -> MigrationState:
             state["errors"].append(f"Deployment failed: {result.get('error', 'Unknown error')}")
             logger.error("deployment_failed", error=result.get("error"))
 
+            # Send completion update with failure status
+            if state.get("broadcaster"):
+                state["broadcaster"](json.dumps({
+                    "type": "agent_completion",
+                    "agent": "staging_deployer",
+                    "status": "failed",
+                    "message": "Staging deployment failed",
+                    "error": result.get("error", "Unknown error"),
+                    "timestamp": datetime.now().isoformat()
+                }))
+
     except Exception as e:
         state["status"] = "deployment_failed"
         state["errors"].append(f"Staging deployer error: {str(e)}")
         logger.error("staging_deployer_exception", error=str(e), exc_info=True)
+
+        # Send error update
+        if state.get("broadcaster"):
+            state["broadcaster"](json.dumps({
+                "type": "agent_completion",
+                "agent": "staging_deployer",
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }))
 
     return state
 
@@ -377,7 +545,7 @@ def create_workflow() -> StateGraph:
 # Workflow Execution
 # ============================================================================
 
-def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: int = 3, git_branch: str = "main", github_token: Optional[str] = None) -> MigrationState:
+def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: int = 3, git_branch: str = "main", github_token: Optional[str] = None, broadcaster=None) -> MigrationState:
     """Run the complete migration workflow.
 
     Args:
@@ -386,6 +554,7 @@ def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: i
         max_retries: Maximum retry attempts
         git_branch: Git branch being used for the migration (default: main)
         github_token: GitHub Personal Access Token for API operations (optional)
+        broadcaster: Optional function to broadcast updates to WebSocket
 
     Returns:
         Final workflow state
@@ -395,9 +564,23 @@ def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: i
     # Create initial state
     initial_state = create_initial_state(project_path, project_type, max_retries, git_branch)
 
+    # Add broadcaster to state if provided
+    if broadcaster:
+        initial_state["broadcaster"] = broadcaster
+
     # If github_token is provided, add it to the state
     if github_token:
         initial_state["github_token"] = github_token
+
+    # Send initial workflow start update
+    if broadcaster:
+        broadcaster(json.dumps({
+            "type": "workflow_start",
+            "message": "Starting migration workflow",
+            "project_path": project_path,
+            "project_type": project_type,
+            "timestamp": datetime.now().isoformat()
+        }))
 
     # Create and compile workflow
     workflow = create_workflow()
@@ -406,6 +589,17 @@ def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: i
     # Execute workflow
     try:
         final_state = app.invoke(initial_state)
+        
+        # Send workflow completion update
+        if broadcaster:
+            broadcaster(json.dumps({
+                "type": "workflow_complete",
+                "status": final_state["status"],
+                "total_cost": final_state["total_cost"],
+                "retry_count": final_state["retry_count"],
+                "timestamp": datetime.now().isoformat()
+            }))
+
         logger.info("workflow_completed",
                    status=final_state["status"],
                    total_cost=final_state["total_cost"],
@@ -416,6 +610,15 @@ def run_workflow(project_path: str, project_type: str = "nodejs", max_retries: i
         logger.error("workflow_execution_failed", error=str(e), exc_info=True)
         initial_state["status"] = "error"
         initial_state["errors"].append(f"Workflow execution failed: {str(e)}")
+        
+        # Send error update
+        if broadcaster:
+            broadcaster(json.dumps({
+                "type": "workflow_error",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }))
+
         return initial_state
 
 
