@@ -9,7 +9,9 @@ The AI Code Modernizer Backend is a sophisticated Python application that levera
 - **LangGraph Orchestration**: Stateful workflow management with conditional routing and retry logic
 - **Docker Isolation**: Safe code execution in containerized environments to prevent host system compromise
 - **MCP Integration**: Secure tool access via Model Context Protocol for file operations and GitHub integration
-- **Real-time Updates**: WebSocket-based communication for live progress monitoring
+- **Real-time Updates**: WebSocket-based communication for live progress monitoring with structured message format
+- **Comprehensive Logging**: All WebSocket messages logged to a single file (`websocket_messages.log`) for monitoring and debugging
+- **Professional Frontend UI**: Complete dashboard with ribbon navigation, custom logo, real-time logs, migration status, and report downloading
 - **Cost Tracking**: Built-in token usage and cost monitoring for LLM operations
 - **Comprehensive Security**: Multiple security layers including input validation, rate limiting, and human approval requirements
 - **Git Branch Management**: Support for specifying target branches for migration consistency
@@ -206,6 +208,56 @@ See `TESTING_GUIDE.md` for complete documentation including:
 - `GET /api/migrations` - List all migrations with pagination
 - `GET /api/migrations/{migration_id}/report` - Download comprehensive reports
 - `DELETE /api/migrations/{migration_id}` - Delete a migration record
+- `WS /ws/migrations/{migration_id}` - WebSocket endpoint for real-time migration updates with structured message format
+
+### WebSocket Message Format
+The WebSocket endpoint sends structured JSON messages with the following format:
+```json
+{
+  "type": "message_type",
+  "agent": "agent_name", 
+  "message": "descriptive message",
+  "timestamp": "ISO_formatted_timestamp",
+  "extra_data": { /* optional additional data */ }
+}
+```
+
+#### Message Types:
+- `connection`: When a client connects
+- `workflow_start`: When the workflow begins
+- `workflow_status`: Status updates about which agent is running
+- `agent_completion`: When an agent completes (success or failure)
+- `workflow_complete`: When the entire workflow completes
+- `workflow_error`: If the workflow encounters an error
+- `agent_thinking`: When an agent is using LLM to think
+- `agent_thinking_complete`: When an agent completes thinking
+- `tool_use`: When an agent uses a tool
+- `tool_complete`: When a tool use completes
+
+### Frontend UI
+The system includes a professional single-page frontend application with:
+- Ribbon navigation with custom logo and user icon
+- Form to configure and start migrations
+- Real-time status indicator with progress visualization
+- WebSocket log viewer with color-coded messages
+- Report download functionality
+- Responsive design for all device sizes
+- Default project path pre-filled for quick start
+
+#### Running the Frontend
+1. **Recommended**: Serve through a local web server:
+   ```bash
+   # Using Python
+   python -m http.server 5500
+   # Then open http://localhost:5500
+   
+   # Or using Node
+   npx http-server
+   ```
+
+2. **Alternative**: Direct file access (requires CORS configuration):
+   - Set `CORS_ALLOW_ALL=true` in backend .env file
+   - Open `frontend/index.html` directly in browser
 
 ## Enhanced Features
 

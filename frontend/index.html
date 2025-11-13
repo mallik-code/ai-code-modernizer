@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Code Modernizer</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --secondary: #64748b;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --light: #f8fafc;
+      --dark: #0f172a;
+      --gray: #e2e8f0;
+      --border: #cbd5e1;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      background-color: #f1f5f9;
+      color: var(--dark);
+      min-height: 100vh;
+    }
+
+    /* Top Ribbon */
+    .top-ribbon {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 2rem;
+      background-color: white;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .logo-image {
+      height: 40px;
+      width: auto;
+      margin-right: 0.5rem;
+    }
+
+    .logo-text {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--dark);
+    }
+
+    .user-container {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .user-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background-color: var(--gray);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--primary);
+    }
+
+    /* Main Content */
+    .main-container {
+      max-width: 1200px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--dark);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Migration Form */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+      color: var(--dark);
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+    }
+
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--primary-dark);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Status Section */
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      font-weight: 500;
+    }
+
+    .status-indicator.active {
+      background-color: #dbeafe;
+      color: var(--primary);
+    }
+
+    .status-indicator.success {
+      background-color: #dcfce7;
+      color: var(--success);
+    }
+
+    .status-indicator.error {
+      background-color: #fee2e2;
+      color: var(--danger);
+    }
+
+    .status-indicator .status-icon {
+      font-size: 1.2rem;
+    }
+
+    /* WebSocket Logs */
+    .logs-container {
+      background-color: #1e293b;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 1rem;
+      height: 400px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+    }
+
+    .log-entry {
+      margin-bottom: 0.25rem;
+      padding: 0.25rem;
+      border-left: 3px solid transparent;
+    }
+
+    .log-info { border-left-color: #93c5fd; }
+    .log-success { border-left-color: #4ade80; }
+    .log-warning { border-left-color: #fbbf24; }
+    .log-error { border-left-color: #f87171; }
+    .log-connection { border-left-color: #a78bfa; }
+    .log-agent { border-left-color: #fda4af; }
+
+    .log-timestamp {
+      color: #94a3b8;
+      margin-right: 0.5rem;
+    }
+
+    .log-agent-name {
+      color: #fda4af;
+      font-weight: bold;
+    }
+
+    /* Progress */
+    .progress-container {
+      margin: 1rem 0;
+    }
+
+    .progress-bar {
+      height: 8px;
+      background-color: var(--gray);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress {
+      height: 100%;
+      background-color: var(--primary);
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    /* Report Viewer */
+    .report-container {
+      display: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 1rem;
+      height: 600px;
+    }
+
+    .report-iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .top-ribbon {
+        padding: 1rem;
+      }
+      
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Top Ribbon -->
+  <div class="top-ribbon">
+    <div class="logo-container">
+      <img src="images/reflectionsit_logo2.jpg" alt="Logo" class="logo-image">
+      <div class="logo-text">AI Code Modernizer</div>
+    </div>
+    <div class="user-container">
+      <div class="user-icon">
+        <i class="fas fa-user"></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="main-container">
+    <!-- Migration Form Card -->
+    <div class="card">
+      <h2 class="card-title">
+        <i class="fas fa-cogs"></i>
+        Start Migration
+      </h2>
+      <form id="migrationForm">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="projectPath">Project Path</label>
+            <input 
+              type="text" 
+              id="projectPath" 
+              value="target_repos/simple_express_app" 
+              required
+            >
+          </div>
+          
+          <div class="form-group">
+            <label for="projectType">Project Type</label>
+            <select id="projectType" required>
+              <option value="">Select Project Type</option>
+              <option value="nodejs">Node.js</option>
+              <option value="python">Python</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="maxRetries">Max Retries</label>
+            <input 
+              type="number" 
+              id="maxRetries" 
+              min="0" 
+              max="10" 
+              value="3"
+            >
+          </div>
+          
+          <div class="form-group">
+            <label for="gitBranch">Git Branch</label>
+            <input 
+              type="text" 
+              id="gitBranch" 
+              placeholder="main" 
+              value="main"
+            >
+          </div>
+        </div>
+        
+        <button type="submit" class="btn btn-primary" id="startButton">
+          <i class="fas fa-play"></i> Start Migration
+        </button>
+      </form>
+    </div>
+
+    <!-- Status Card -->
+    <div class="card">
+      <h2 class="card-title">
+        <i class="fas fa-bolt"></i>
+        Migration Status
+      </h2>
+      
+      <div id="statusIndicator" class="status-indicator">
+        <i class="fas fa-circle status-icon"></i>
+        <span>Waiting to start...</span>
+      </div>
+      
+      <div class="progress-container">
+        <div class="progress-bar">
+          <div class="progress" id="progressBar"></div>
+        </div>
+      </div>
+      
+      <div id="migrationDetails" style="display: none;">
+        <p><strong>Migration ID:</strong> <span id="migrationIdDisplay"></span></p>
+        <p><strong>Project Path:</strong> <span id="projectPathDisplay"></span></p>
+        <p><strong>Status:</strong> <span id="statusDisplay"></span></p>
+      </div>
+    </div>
+
+    <!-- WebSocket Logs Card -->
+    <div class="card">
+      <h2 class="card-title">
+        <i class="fas fa-terminal"></i>
+        Real-time Updates
+      </h2>
+      <div class="logs-container" id="logsContainer">
+        <div class="log-entry log-info">
+          <span class="log-timestamp">[Waiting...]</span> Waiting for migration to start...
+        </div>
+      </div>
+    </div>
+
+    <!-- Report Viewer -->
+    <div class="card">
+      <h2 class="card-title">
+        <i class="fas fa-file-alt"></i>
+        Migration Report
+      </h2>
+      <div class="report-container" id="reportContainer">
+        <iframe class="report-iframe" id="reportIframe"></iframe>
+      </div>
+      <div id="reportActions" style="display: none; margin-top: 1rem;">
+        <button class="btn btn-primary" id="viewReportBtn">
+          <i class="fas fa-eye"></i> Preview Report
+        </button>
+        <a id="downloadReportLink" class="btn btn-primary" style="margin-left: 0.5rem; text-decoration: none;">
+          <i class="fas fa-download"></i> Download Report
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Configuration
+    const BASE_URL = 'http://localhost:8000'; // Change this to your API URL
+    let ws = null;
+    let currentMigrationId = null;
+    let isMigrationRunning = false;
+
+    // DOM Elements
+    const migrationForm = document.getElementById('migrationForm');
+    const startButton = document.getElementById('startButton');
+    const statusIndicator = document.getElementById('statusIndicator');
+    const progressBar = document.getElementById('progressBar');
+    const logsContainer = document.getElementById('logsContainer');
+    const migrationDetails = document.getElementById('migrationDetails');
+    const migrationIdDisplay = document.getElementById('migrationIdDisplay');
+    const projectPathDisplay = document.getElementById('projectPathDisplay');
+    const statusDisplay = document.getElementById('statusDisplay');
+    const reportContainer = document.getElementById('reportContainer');
+    const reportIframe = document.getElementById('reportIframe');
+    const viewReportBtn = document.getElementById('viewReportBtn');
+    const reportActions = document.getElementById('reportActions');
+    const downloadReportLink = document.getElementById('downloadReportLink');
+
+    // Add log entry to console
+    function addLogEntry(message, type = 'info', agent = null, timestamp = new Date()) {
+      const logEntry = document.createElement('div');
+      logEntry.className = `log-entry log-${type}`;
+      
+      const timestampStr = `[${timestamp.toISOString().slice(11, -1)}]`;
+      const agentStr = agent ? `<span class="log-agent-name">[${agent}]</span> ` : '';
+      
+      logEntry.innerHTML = `
+        <span class="log-timestamp">${timestampStr}</span>
+        ${agentStr}${message}
+      `;
+      
+      logsContainer.appendChild(logEntry);
+      logsContainer.scrollTop = logsContainer.scrollHeight;
+    }
+
+    // Update status indicator
+    function updateStatus(message, type = 'info') {
+      statusIndicator.className = `status-indicator ${type}`;
+      statusIndicator.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'} status-icon"></i>
+        <span>${message}</span>
+      `;
+    }
+
+    // Update progress bar
+    function updateProgress(percent) {
+      progressBar.style.width = `${percent}%`;
+    }
+
+    // Start migration
+    async function startMigration(formData) {
+      if (isMigrationRunning) {
+        addLogEntry('Migration is already running!', 'error');
+        return;
+      }
+
+      isMigrationRunning = true;
+      startButton.disabled = true;
+      updateStatus('Starting migration...', 'active');
+      addLogEntry('Starting new migration...', 'info');
+
+      try {
+        const response = await fetch(`${BASE_URL}/api/migrations/start`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(formData)
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        currentMigrationId = result.migration_id;
+        
+        migrationDetails.style.display = 'block';
+        migrationIdDisplay.textContent = currentMigrationId;
+        projectPathDisplay.textContent = result.project_path;
+        statusDisplay.textContent = result.status;
+
+        addLogEntry(`Migration started with ID: ${currentMigrationId}`, 'info');
+        
+        // Connect WebSocket
+        connectWebSocket(currentMigrationId);
+        
+        updateStatus('Migration in progress...', 'active');
+        updateProgress(10);
+      } catch (error) {
+        console.error('Error starting migration:', error);
+        addLogEntry(`Error starting migration: ${error.message}`, 'error');
+        updateStatus('Error starting migration', 'error');
+        isMigrationRunning = false;
+        startButton.disabled = false;
+      }
+    }
+
+    // Connect WebSocket
+    function connectWebSocket(migrationId) {
+      const wsUrl = `${BASE_URL.replace('http', 'ws')}/ws/migrations/${migrationId}`;
+      addLogEntry(`Connecting to WebSocket: ${wsUrl}`, 'connection');
+      
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = function(event) {
+        addLogEntry('WebSocket connected successfully', 'connection');
+      };
+
+      ws.onmessage = function(event) {
+        try {
+          const data = JSON.parse(event.data);
+          handleWebSocketMessage(data);
+        } catch (e) {
+          addLogEntry(`Error parsing WebSocket message: ${event.data}`, 'error');
+          console.error('WebSocket parsing error:', e);
+        }
+      };
+
+      ws.onclose = function(event) {
+        addLogEntry(`WebSocket closed: ${event.code} - ${event.reason}`, 'connection');
+        if (isMigrationRunning) {
+          // Try to get final status
+          setTimeout(() => checkMigrationStatus(migrationId), 1000);
+        }
+      };
+
+      ws.onerror = function(error) {
+        addLogEntry(`WebSocket error: ${error}`, 'error');
+      };
+    }
+
+    // Handle WebSocket message
+    function handleWebSocketMessage(data) {
+      try {
+        const { type, agent, message, timestamp } = data || {};
+        const logType = getLogType(type, data?.status);
+        const time = timestamp ? new Date(timestamp) : new Date();
+
+        addLogEntry(message, logType, agent, time);
+
+        // Update progress based on agent activity
+        if (type === 'agent_completion' && data?.status === 'success') {
+          updateProgress(70);
+        }
+
+        // Check if migration is complete
+        if (type === 'workflow_complete' || (type === 'agent_completion' && data?.status === 'success' && agent === 'staging_deployer')) {
+          setTimeout(() => checkMigrationStatus(currentMigrationId), 2000);
+        }
+      } catch (e) {
+        console.error('Error in handleWebSocketMessage:', e, data);
+        addLogEntry(`Error processing WebSocket message: ${e.message}`, 'error');
+      }
+    }
+
+    // Get log type based on message type
+    function getLogType(type, status = null) {
+      switch (type) {
+        case 'workflow_complete':
+          return status === 'deployed' || status === 'validated' ? 'success' : 'error';
+        case 'agent_completion':
+          return status === 'success' ? 'success' : status === 'failed' ? 'error' : 'info';
+        case 'workflow_error':
+        case 'agent_error':
+          return 'error';
+        case 'connection':
+          return 'connection';
+        case 'tool_use':
+        case 'agent_thinking':
+          return 'agent';
+        default:
+          return 'info';
+      }
+    }
+
+    // Check migration status
+    async function checkMigrationStatus(migrationId) {
+      try {
+        const response = await fetch(`${BASE_URL}/api/migrations/${migrationId}`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        // Update status display
+        statusDisplay.textContent = result.status;
+        
+        if (result.status === 'deployed') {
+          updateStatus('Migration completed successfully!', 'success');
+          updateProgress(100);
+          addLogEntry('Migration completed successfully!', 'success');
+          
+          // Show download report button if available
+          if (result.reports && result.reports.html) {
+            reportActions.style.display = 'flex';  // Show the action container
+            viewReportBtn.style.display = 'none';  // Hide the preview button
+            
+            // Set up download link
+            const fullDownloadUrl = result.reports.html.startsWith('http') ? 
+              result.reports.html : 
+              `${BASE_URL}${result.reports.html}`;
+            downloadReportLink.href = fullDownloadUrl;
+            downloadReportLink.target = "_blank"; // Open in new tab for download
+          }
+        } else if (result.status === 'error') {
+          updateStatus('Migration failed', 'error');
+          addLogEntry('Migration failed with errors', 'error');
+          if (result.errors && result.errors.length > 0) {
+            result.errors.forEach(error => addLogEntry(`Error: ${error}`, 'error'));
+          }
+        } else {
+          updateStatus(`Migration status: ${result.status}`, 'active');
+          addLogEntry(`Migration status: ${result.status}`, 'info');
+        }
+        
+        isMigrationRunning = false;
+        startButton.disabled = false;
+      } catch (error) {
+        console.error('Error checking migration status:', error);
+        addLogEntry(`Error checking status: ${error.message}`, 'error');
+        isMigrationRunning = false;
+        startButton.disabled = false;
+      }
+    }
+
+    // Load report in iframe
+    function loadReport(reportUrl) {
+      // Use the report URL directly in the iframe
+      // We'll handle the display in the iframe directly
+      reportIframe.src = reportUrl;
+      reportContainer.style.display = 'block';
+      addLogEntry('Loading migration report...', 'info');
+
+      // Scroll to report
+      reportContainer.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Form submission handler
+    migrationForm.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const formData = {
+        project_path: document.getElementById('projectPath').value,
+        project_type: document.getElementById('projectType').value,
+        max_retries: parseInt(document.getElementById('maxRetries').value) || 3,
+        git_branch: document.getElementById('gitBranch').value || 'main'
+      };
+      
+      await startMigration(formData);
+    });
+
+    // Initial setup
+    addLogEntry('AI Code Modernizer UI initialized', 'info');
+  </script>
+</body>
+</html>

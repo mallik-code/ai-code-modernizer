@@ -39,10 +39,19 @@ app = FastAPI(
 )
 
 # CORS Configuration
+# If CORS_ALLOW_ALL is set to true, allow all origins (for development only)
+if os.getenv("CORS_ALLOW_ALL", "").lower() == "true":
+    cors_origins = ["*"]
+    allow_credentials = False
+else:
+    # Default to allowing common local development origins
+    cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500,http://localhost:5500").split(",")
+    allow_credentials = True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(","),
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -667,7 +676,15 @@ async def migration_progress(websocket: WebSocket, migration_id: str):
 async def startup_event():
     """Run on application startup."""
     logger.info("api_server_starting", version="1.0.0")
-    logger.info("cors_origins", origins=os.getenv("CORS_ORIGINS", "http://localhost:5173"))
+    
+    # Check for CORS_ALLOW_ALL setting
+    cors_allow_all = os.getenv("CORS_ALLOW_ALL", "").lower() == "true"
+    origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500,http://localhost:5500")
+    
+    logger.info("cors_configuration", 
+               cors_allow_all=cors_allow_all,
+               allowed_origins=origins,
+               note="For direct HTML file access, set CORS_ALLOW_ALL=true in .env")
 
 
 @app.on_event("shutdown")
