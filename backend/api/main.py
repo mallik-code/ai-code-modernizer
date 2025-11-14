@@ -62,21 +62,24 @@ app.add_middleware(
 
 class MigrationStartRequest(BaseModel):
     """Request model for starting a migration."""
-    project_path: str = Field(..., description="Absolute or relative path to the project")
+    project_path: Optional[str] = Field(default=None, description="Absolute or relative path to the local project (required if git_repo_url not provided)")
+    git_repo_url: Optional[str] = Field(default=None, description="URL of Git repository to clone (required if project_path not provided)")
     project_type: str = Field(..., description="Project type: 'nodejs' or 'python'")
     max_retries: int = Field(default=3, ge=0, le=10, description="Maximum retry attempts for failed validations")
     git_branch: str = Field(default="main", description="Git branch to use for the migration (default: main)")
     github_token: Optional[str] = Field(default=None, description="GitHub Personal Access Token for API operations (optional)")
+    force_fresh_clone: bool = Field(default=False, description="Force fresh clone of the repository (default: False)")
     options: Optional[dict] = Field(default_factory=dict, description="Additional options")
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "project_path": "target_repos/simple_express_app",
+                "git_repo_url": "https://github.com/user/repo.git",
                 "git_branch": "main",
                 "github_token": "ghp_xxxxxxxxxxxxx",
                 "project_type": "nodejs",
                 "max_retries": 3,
+                "force_fresh_clone": False,
                 "options": {
                     "create_pr": True,
                     "run_tests": True
@@ -137,12 +140,15 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
         git_branch: Git branch to use for the migration (default: main)
         github_token: GitHub Personal Access Token for API operations (optional)
     """
+    is_cloned_repo = migrations_db[migration_id].get("original_repo_url") is not None
+
     try:
         logger.info("starting_background_workflow",
                    migration_id=migration_id,
                    project_path=project_path,
                    git_branch=git_branch,
-                   has_github_token=bool(github_token))
+                   has_github_token=bool(github_token),
+                   is_cloned_repo=is_cloned_repo)
 
         # Update status to running
         migrations_db[migration_id]["status"] = "running"
@@ -247,6 +253,21 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
         migrations_db[migration_id]["errors"] = [str(e)]
         migrations_db[migration_id]["completed_at"] = datetime.utcnow()
 
+    finally:
+        # Clean up cloned repository if applicable
+        if is_cloned_repo:
+            try:
+                import shutil
+                shutil.rmtree(project_path, ignore_errors=True)
+                logger.info("cloned_repo_cleaned_up",
+                           migration_id=migration_id,
+                           project_path=project_path)
+            except Exception as e:
+                logger.error("cloned_repo_cleanup_failed",
+                            migration_id=migration_id,
+                            project_path=project_path,
+                            error=str(e))
+
 
 # ============================================================================
 # API Endpoints
@@ -317,110 +338,226 @@ async def start_migration(request: MigrationStartRequest, background_tasks: Back
     Raises:
         HTTPException: If project path doesn't exist or validation fails
     """
-    # Validate project path
-    project_path = Path(request.project_path)
-    if not project_path.exists():
-        raise HTTPException(status_code=404, detail=f"Project path not found: {request.project_path}")
+    from utils.git_utils import clone_repository, get_repo_name_from_url, is_valid_git_repo_url
+    import subprocess
+
+    # Validate that either project_path or git_repo_url is provided
+    if not request.project_path and not request.git_repo_url:
+        raise HTTPException(status_code=400, detail="Either project_path or git_repo_url must be provided")
+
+    if request.project_path and request.git_repo_url:
+        raise HTTPException(status_code=400, detail="Only one of project_path or git_repo_url should be provided")
 
     # Validate project type
     if request.project_type not in ["nodejs", "python"]:
         raise HTTPException(status_code=400, detail="project_type must be 'nodejs' or 'python'")
 
-    # Checkout the specified branch if the directory is a git repository
-    if request.git_branch:
-        import subprocess
-        try:
-            # Check if it's a git repository
-            git_dir = project_path / ".git"
-            if git_dir.exists():
-                # Change to project directory and checkout the specified branch
-                result = subprocess.run(
-                    ["git", "checkout", request.git_branch],
-                    cwd=project_path,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                
-                if result.returncode != 0:
-                    # If checkout fails, try fetching the branch first
-                    fetch_result = subprocess.run(
-                        ["git", "fetch", "origin", request.git_branch],
-                        cwd=project_path,
-                        capture_output=True,
-                        text=True,
-                        timeout=30
-                    )
-                    
-                    if fetch_result.returncode == 0:
-                        # Try checkout again after fetch
-                        result = subprocess.run(
-                            ["git", "checkout", request.git_branch],
-                            cwd=project_path,
-                            capture_output=True,
-                            text=True,
-                            timeout=30
-                        )
-                
-                if result.returncode != 0:
-                    logger.warning("branch_checkout_failed", 
-                                 branch=request.git_branch, 
-                                 project_path=str(project_path),
-                                 error=result.stderr)
-                    # We'll continue anyway as this might not be critical for all use cases
-                else:
-                    logger.info("branch_checked_out", 
-                               branch=request.git_branch, 
-                               project_path=str(project_path))
-                    # Also pull latest changes for the branch
-                    pull_result = subprocess.run(
-                        ["git", "pull", "origin", request.git_branch],
-                        cwd=project_path,
-                        capture_output=True,
-                        text=True,
-                        timeout=30
-                    )
-                    if pull_result.returncode == 0:
-                        logger.info("branch_pulled", 
-                                   branch=request.git_branch,
-                                   project_path=str(project_path))
-            else:
-                logger.info("not_a_git_repository", project_path=str(project_path))
-        except subprocess.TimeoutExpired:
-            logger.warning("git_operation_timeout", 
-                          operation="checkout", 
-                          branch=request.git_branch,
-                          project_path=str(project_path))
-        except Exception as e:
-            logger.warning("git_operation_error", 
-                          error=str(e),
-                          operation="checkout",
-                          branch=request.git_branch,
-                          project_path=str(project_path))
-
     # Generate unique migration ID
     migration_id = f"mig_{uuid.uuid4().hex[:12]}"
 
-    # Create migration record
+    # Create migration record with status history
     migration_record = {
         "migration_id": migration_id,
-        "status": "started",
-        "project_path": str(project_path.absolute()),
+        "status": "initializing",
+        "project_path": "",
         "project_type": request.project_type,
         "max_retries": request.max_retries,
         "started_at": datetime.utcnow(),
         "completed_at": None,
         "duration_seconds": None,
         "result": None,
-        "errors": []
+        "errors": [],
+        "original_repo_url": request.git_repo_url,  # Store original repo URL if provided
+        "status_history": []  # History of status updates
     }
 
     migrations_db[migration_id] = migration_record
 
+    # If git_repo_url is provided, clone the repository
+    if request.git_repo_url:
+        # Validate the Git repository URL
+        if not is_valid_git_repo_url(request.git_repo_url):
+            raise HTTPException(status_code=400, detail=f"Invalid Git repository URL: {request.git_repo_url}")
+
+        # Clone the repository to a temporary directory
+        cloned_project_path = f"cloned_repos/{get_repo_name_from_url(request.git_repo_url)}_{uuid.uuid4().hex[:8]}"
+
+        # Send WebSocket update about starting clone
+        # Create a temporary broadcaster to send updates during cloning
+        def create_temp_broadcast(mid):
+            def temp_broadcast(msg):
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.run_coroutine_threadsafe(
+                            manager.broadcast(msg, mid),
+                            loop
+                        )
+                    else:
+                        asyncio.run(manager.broadcast(msg, mid))
+                except RuntimeError:
+                    asyncio.run(manager.broadcast(msg, mid))
+            return temp_broadcast
+
+        temp_broadcast = create_temp_broadcast(migration_id)
+
+        # Create and send the starting clone message
+        clone_start_msg = {
+            "type": "workflow_status",
+            "agent": "system",
+            "message": f"Starting to clone repository from {request.git_repo_url}",
+            "timestamp": datetime.now().isoformat(),
+            "extra_data": {
+                "status": "cloning_repository",
+                "repo_url": request.git_repo_url
+            }
+        }
+
+        # Add to status history
+        migrations_db[migration_id]["status_history"].append(clone_start_msg)
+        temp_broadcast(json.dumps(clone_start_msg))
+
+        success = clone_repository(
+            repo_url=request.git_repo_url,
+            local_path=cloned_project_path,
+            branch=request.git_branch,
+            github_token=request.github_token,
+            force_fresh_clone=request.force_fresh_clone
+        )
+
+        if not success:
+            # Send WebSocket update about clone failure
+            clone_error_msg = {
+                "type": "workflow_error",
+                "agent": "system",
+                "message": f"Failed to clone repository from {request.git_repo_url}",
+                "timestamp": datetime.now().isoformat(),
+                "extra_data": {
+                    "status": "clone_failed",
+                    "repo_url": request.git_repo_url
+                }
+            }
+
+            # Add to status history
+            migrations_db[migration_id]["status_history"].append(clone_error_msg)
+            temp_broadcast(json.dumps(clone_error_msg))
+
+            # If cloning failed, provide specific guidance for private repository access
+            from utils.git_utils import handle_git_permission_errors
+            permission_help = handle_git_permission_errors(request.git_repo_url, request.github_token)
+
+            # Create a more informative error message
+            error_msg = f"Failed to clone repository: {request.git_repo_url}\n\n{permission_help}"
+            raise HTTPException(status_code=500, detail=error_msg)
+
+        # Send WebSocket update about successful clone
+        clone_success_msg = {
+            "type": "workflow_status",
+            "agent": "system",
+            "message": f"Successfully cloned repository from {request.git_repo_url} to {cloned_project_path}",
+            "timestamp": datetime.now().isoformat(),
+            "extra_data": {
+                "status": "repository_cloned",
+                "repo_url": request.git_repo_url,
+                "local_path": cloned_project_path
+            }
+        }
+
+        # Add to status history
+        migrations_db[migration_id]["status_history"].append(clone_success_msg)
+        temp_broadcast(json.dumps(clone_success_msg))
+
+        project_path = Path(cloned_project_path)
+        logger.info("repository_cloned",
+                   repo_url=request.git_repo_url,
+                   local_path=str(project_path),
+                   branch=request.git_branch)
+    else:
+        # Use local project path
+        project_path = Path(request.project_path)
+        if not project_path.exists():
+            raise HTTPException(status_code=404, detail=f"Project path not found: {request.project_path}")
+
+        # Checkout the specified branch if the directory is a git repository
+        if request.git_branch:
+            try:
+                # Check if it's a git repository
+                git_dir = project_path / ".git"
+                if git_dir.exists():
+                    # Change to project directory and checkout the specified branch
+                    result = subprocess.run(
+                        ["git", "checkout", request.git_branch],
+                        cwd=project_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+
+                    if result.returncode != 0:
+                        # If checkout fails, try fetching the branch first
+                        fetch_result = subprocess.run(
+                            ["git", "fetch", "origin", request.git_branch],
+                            cwd=project_path,
+                            capture_output=True,
+                            text=True,
+                            timeout=30
+                        )
+
+                        if fetch_result.returncode == 0:
+                            # Try checkout again after fetch
+                            result = subprocess.run(
+                                ["git", "checkout", request.git_branch],
+                                cwd=project_path,
+                                capture_output=True,
+                                text=True,
+                                timeout=30
+                            )
+
+                    if result.returncode != 0:
+                        logger.warning("branch_checkout_failed",
+                                     branch=request.git_branch,
+                                     project_path=str(project_path),
+                                     error=result.stderr)
+                        # We'll continue anyway as this might not be critical for all use cases
+                    else:
+                        logger.info("branch_checked_out",
+                                   branch=request.git_branch,
+                                   project_path=str(project_path))
+                        # Also pull latest changes for the branch
+                        pull_result = subprocess.run(
+                            ["git", "pull", "origin", request.git_branch],
+                            cwd=project_path,
+                            capture_output=True,
+                            text=True,
+                            timeout=30
+                        )
+                        if pull_result.returncode == 0:
+                            logger.info("branch_pulled",
+                                       branch=request.git_branch,
+                                       project_path=str(project_path))
+                else:
+                    logger.info("not_a_git_repository", project_path=str(project_path))
+            except subprocess.TimeoutExpired:
+                logger.warning("git_operation_timeout",
+                              operation="checkout",
+                              branch=request.git_branch,
+                              project_path=str(project_path))
+            except Exception as e:
+                logger.warning("git_operation_error",
+                              error=str(e),
+                              operation="checkout",
+                              branch=request.git_branch,
+                              project_path=str(project_path))
+
+    # Update migration record with determined project_path
+    migrations_db[migration_id]["project_path"] = str(project_path.absolute())
+    migrations_db[migration_id]["status"] = "started"
+
     logger.info("migration_started",
                migration_id=migration_id,
-               project_path=request.project_path,
-               project_type=request.project_type)
+               project_path=str(project_path.absolute()),
+               project_type=request.project_type,
+               git_repo_url=request.git_repo_url)
 
     # Start workflow in background
     background_tasks.add_task(
@@ -438,6 +575,7 @@ async def start_migration(request: MigrationStartRequest, background_tasks: Back
         "status": "started",
         "project_path": str(project_path.absolute()),
         "project_type": request.project_type,
+        "git_repo_url": request.git_repo_url,
         "started_at": migration_record["started_at"].isoformat(),
         "message": "Migration workflow started successfully. Use GET /api/migrations/{migration_id} to check status."
     }
@@ -806,16 +944,52 @@ async def migration_progress(websocket: WebSocket, migration_id: str):
     """WebSocket endpoint for real-time migration updates."""
     await manager.connect(websocket, migration_id)
     try:
-        # Send a connection confirmation
-        await websocket.send_text(json.dumps({
-            "type": "connection",
-            "message": "Connected to migration updates",
-            "migration_id": migration_id,
-            "timestamp": datetime.now().isoformat()
-        }))
-        
+        # Check if migration exists in DB and send initial status
+        if migration_id in migrations_db:
+            migration_record = migrations_db[migration_id]
+            # Send initial status based on current migration state
+            initial_status_msg = {
+                "type": "workflow_status",
+                "agent": "system",
+                "message": f"Connected to migration {migration_id} (Status: {migration_record['status']})",
+                "timestamp": datetime.now().isoformat(),
+                "extra_data": {
+                    "status": migration_record["status"],
+                    "project_path": migration_record["project_path"],
+                    "git_repo_url": migration_record.get("original_repo_url")
+                }
+            }
+
+            # Send the status history (if any) to catch up client on previous events
+            for status_msg in migration_record.get("status_history", []):
+                await websocket.send_text(json.dumps(status_msg))
+
+            # If this was a git repo clone, send information about it
+            if migration_record.get("original_repo_url"):
+                clone_info_msg = {
+                    "type": "workflow_status",
+                    "agent": "system",
+                    "message": f"Repository cloned from {migration_record['original_repo_url']} to {migration_record['project_path']}",
+                    "timestamp": datetime.now().isoformat(),
+                    "extra_data": {
+                        "status": "repository_cloned_info",
+                        "repo_url": migration_record["original_repo_url"],
+                        "local_path": migration_record["project_path"]
+                    }
+                }
+                await websocket.send_text(json.dumps(clone_info_msg))
+        else:
+            initial_status_msg = {
+                "type": "connection",
+                "message": "Connected to migration updates",
+                "migration_id": migration_id,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        await websocket.send_text(json.dumps(initial_status_msg))
+
         while True:
-            # Keep the connection alive
+            # Listen for incoming messages from client
             data = await websocket.receive_text()
             # Could handle client messages here if needed, for now just acknowledge
             # In a more complex implementation, this could include commands to the server

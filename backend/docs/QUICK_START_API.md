@@ -50,7 +50,7 @@ Total Cost: $0.1234
 #### Start the API Server
 ```bash
 cd backend
-uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 **Visit**: http://localhost:8000/docs for interactive API documentation

@@ -50,23 +50,13 @@ function App() {
     }));
     addLogEntry('Starting new migration...', 'info');
 
-    // Map form data to backend expected format (snake_case)
-    const backendPayload = {
-      project_path: formData.projectPath,
-      project_type: formData.projectType,
-      max_retries: parseInt(formData.maxRetries) || 3,
-      git_branch: formData.gitBranch,
-      github_token: formData.githubToken || null,
-      options: formData.options || {}
-    };
-
     try {
       const response = await fetch(`${BASE_URL}/api/migrations/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(backendPayload)
+        body: JSON.stringify(formData)
       });
 
       if (!response.ok) {
@@ -88,14 +78,14 @@ function App() {
       setMigrationDetails({
         status: result.status,
         migrationId: migrationId,
-        projectPath: result.project_path
+        projectPath: result.project_path || formData.projectPath
       });
 
       addLogEntry(`Migration started with ID: ${migrationId}`, 'info');
-      
+
       // Connect WebSocket
       connectWebSocket(migrationId);
-      
+
       setMigrationStatus('in-progress');
       setProgress(10);
     } catch (error) {
