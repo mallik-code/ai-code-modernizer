@@ -26,6 +26,8 @@ from utils.logger import setup_logger
 from utils.report_generator import ReportGenerator
 from api.websocket_manager import manager
 
+import aiohttp
+
 logger = setup_logger(__name__)
 
 # ============================================================================
@@ -126,6 +128,105 @@ report_generator = ReportGenerator(output_dir="reports")
 
 
 # ============================================================================
+# Repository Access Validation
+# ============================================================================
+
+async def validate_repo_access(repo_url: str, github_token: Optional[str] = None) -> bool:
+    """Validate repository access by checking if it's public or private and if authentication works.
+
+    Args:
+        repo_url: URL of the Git repository to validate
+        github_token: Optional GitHub personal access token
+
+    Returns:
+        True if repository is private (or likely private), False if public
+
+    Raises:
+        HTTPException: If repository requires authentication that isn't provided or is invalid
+    """
+    # Handle different URL formats
+    if repo_url.startswith("https://github.com/"):
+        # GitHub HTTPS URL
+        # Extract owner and repo name from URL
+        parts = repo_url.replace("https://github.com/", "").rstrip('.git').split('/')
+        if len(parts) >= 2:
+            owner, repo = parts[0], parts[1]
+
+            # Make a request to GitHub API to check repository visibility
+            api_url = f"https://api.github.com/repos/{owner}/{repo}"
+
+            headers = {"User-Agent": "AI-Code-Modernizer"}
+            if github_token:
+                headers["Authorization"] = f"Bearer {github_token}"
+
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(api_url, headers=headers) as response:
+                        if response.status == 200:
+                            # Repository exists and is accessible
+                            repo_data = await response.json()
+                            is_private = repo_data.get("private", False)
+                            return is_private
+                        elif response.status == 404:
+                            # For GitHub, 404 can mean either the repo doesn't exist OR it's private and we don't have access
+                            # If a token was provided, it could be invalid, lack permissions, or the repo doesn't exist
+                            if github_token:
+                                # The token was provided but we still got 404.
+                                # Since GitHub returns 404 for both non-existent repos and private repos without access,
+                                # we'll try to optimistically assume it's a private repo and return True.
+                                # The actual cloning process will validate if it truly exists and if the token works.
+                                return True  # Assume private when token provided but got 404
+                            else:
+                                # No token provided - could be private repo that requires authentication
+                                raise HTTPException(status_code=401, detail=f"Repository requires GitHub token for access: {repo_url}")
+                        elif response.status == 401:
+                            # Unauthorized - token may be invalid or insufficient permissions
+                            if github_token:
+                                raise HTTPException(status_code=401, detail=f"Invalid GitHub token or insufficient permissions for repository: {repo_url}")
+                            else:
+                                # For public repos, no token should be needed, so this indicates an issue
+                                # Let's try without the token to see if it's a public repo
+                                async with session.get(api_url) as public_response:
+                                    if public_response.status == 200:
+                                        # It's a public repo, so no token needed
+                                        repo_data = await public_response.json()
+                                        is_private = repo_data.get("private", False)
+                                        return is_private
+                                    else:
+                                        raise HTTPException(status_code=401, detail=f"Authentication required for repository: {repo_url}")
+                        elif response.status == 403:
+                            # Forbidden - token may be invalid or rate limit exceeded
+                            if github_token:
+                                raise HTTPException(status_code=403, detail=f"GitHub API access forbidden (check token permissions and rate limits): {repo_url}")
+                            else:
+                                raise HTTPException(status_code=401, detail=f"Repository requires authentication: {repo_url}")
+                        else:
+                            # Some other error occurred
+                            raise HTTPException(status_code=500, detail=f"Failed to access repository: {repo_url} (Status: {response.status})")
+            except aiohttp.ClientError as e:
+                # Network error or similar - try to clone directly as a fallback
+                logger.warning("github_api_check_failed",
+                              repo_url=repo_url,
+                              error=str(e),
+                              message="Falling back to git clone check")
+                # For now, we'll return False (assume public) and let the clone process handle it
+                # A more sophisticated implementation would try git ls-remote as well
+                return False
+    elif repo_url.startswith("git@github.com:"):
+        # GitHub SSH URL - harder to validate without SSH keys
+        # For now, we'll assume it's private since SSH access typically requires authentication
+        return True  # Assume private for SSH URLs
+    elif "gitlab.com" in repo_url or "bitbucket.org" in repo_url:
+        # For other providers, we would need specific API checks
+        # For now, we'll do a simple check by attempting to determine if it's likely private
+        # based on whether a token is provided
+        return github_token is not None
+    else:
+        # For custom Git hosting, assume it's private if token is provided
+        return github_token is not None
+
+
+# ============================================================================
 # Background Task: Run Workflow
 # ============================================================================
 
@@ -171,28 +272,47 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
                 asyncio.run(manager.broadcast(msg, migration_id))
 
         # Execute workflow with broadcaster
-        final_state = run_workflow(
-            project_path=project_path,
-            project_type=project_type,
-            max_retries=max_retries,
-            git_branch=git_branch,
-            github_token=github_token,
-            broadcaster=broadcast_update
-        )
+        try:
+            final_state = run_workflow(
+                project_path=project_path,
+                project_type=project_type,
+                max_retries=max_retries,
+                git_branch=git_branch,
+                github_token=github_token,
+                broadcaster=broadcast_update
+            )
+        except Exception as wf_error:
+            logger.error("workflow_execution_failed",
+                        migration_id=migration_id,
+                        error=str(wf_error),
+                        exc_info=True)
+            # Create a minimal final state to allow report generation
+            final_state = {
+                "status": "error",
+                "errors": [str(wf_error)],
+                "project_path": project_path,
+                "project_type": project_type,
+                "migration_plan": None,
+                "validation_result": None,
+                "total_cost": 0.0,
+                "agent_costs": {},
+                "retry_count": 0,
+                "validation_success": False
+            }
 
         # Extract results
         result = {
-            "workflow_status": final_state["status"],
-            "validation_success": final_state.get("validation_success", False),
-            "pr_url": final_state.get("pr_url"),
-            "branch_name": final_state.get("branch_name"),
-            "retry_count": final_state["retry_count"],
-            "total_cost_usd": final_state["total_cost"],
-            "agent_costs": final_state["agent_costs"]
+            "workflow_status": final_state.get("status", "unknown") if final_state else "unknown",
+            "validation_success": final_state.get("validation_success", False) if final_state else False,
+            "pr_url": final_state.get("pr_url") if final_state else None,
+            "branch_name": final_state.get("branch_name") if final_state else None,
+            "retry_count": final_state.get("retry_count", 0) if final_state else 0,
+            "total_cost_usd": final_state.get("total_cost", 0.0) if final_state else 0.0,
+            "agent_costs": final_state.get("agent_costs", {}) if final_state else {}
         }
 
         # Add validation details if available
-        if final_state.get("validation_result"):
+        if final_state and final_state.get("validation_result"):
             validation_data = final_state["validation_result"].get("validation_result", {})
             result.update({
                 "tests_run": validation_data.get("tests_run", False),
@@ -201,14 +321,14 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
             })
 
         # Add migration plan details
-        if final_state.get("migration_plan"):
+        if final_state and final_state.get("migration_plan"):
             result["dependencies_upgraded"] = len(final_state["migration_plan"].get("dependencies", {}))
             result["overall_risk"] = final_state["migration_plan"].get("overall_risk")
 
         # Update database
-        migrations_db[migration_id]["status"] = final_state["status"]
+        migrations_db[migration_id]["status"] = final_state.get("status", "error") if final_state else "error"
         migrations_db[migration_id]["result"] = result
-        migrations_db[migration_id]["errors"] = final_state.get("errors", [])
+        migrations_db[migration_id]["errors"] = final_state.get("errors", []) if final_state else []
         migrations_db[migration_id]["completed_at"] = datetime.utcnow()
 
         # Calculate duration
@@ -218,29 +338,34 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
 
         # Generate comprehensive reports
         try:
-            project_name = Path(project_path).name
-            report_paths = report_generator.generate_all_reports(final_state, project_name)
+            if final_state is not None:
+                project_name = Path(project_path).name
+                report_paths = report_generator.generate_all_reports(final_state, project_name)
 
-            # Store report paths in migration record
-            migrations_db[migration_id]["reports"] = {
-                "html": f"/api/migrations/{migration_id}/report?type=html",
-                "markdown": f"/api/migrations/{migration_id}/report?type=markdown",
-                "json": f"/api/migrations/{migration_id}/report?type=json"
-            }
-            migrations_db[migration_id]["report_files"] = report_paths
+                # Store report paths in migration record
+                migrations_db[migration_id]["reports"] = {
+                    "html": f"/api/migrations/{migration_id}/report?type=html",
+                    "markdown": f"/api/migrations/{migration_id}/report?type=markdown",
+                    "json": f"/api/migrations/{migration_id}/report?type=json"
+                }
+                migrations_db[migration_id]["report_files"] = report_paths
 
-            logger.info("reports_generated",
-                       migration_id=migration_id,
-                       reports=list(report_paths.keys()))
+                logger.info("reports_generated",
+                           migration_id=migration_id,
+                           reports=list(report_paths.keys()))
+            else:
+                logger.warning("report_generation_skipped_final_state_none",
+                              migration_id=migration_id)
         except Exception as e:
             logger.warning("report_generation_failed",
                           migration_id=migration_id,
-                          error=str(e))
+                          error=str(e),
+                          exc_info=True)
 
         logger.info("background_workflow_complete",
                    migration_id=migration_id,
-                   status=final_state["status"],
-                   cost=final_state["total_cost"])
+                   status=final_state.get("status", "unknown") if final_state else "unknown",
+                   cost=final_state.get("total_cost", 0.0) if final_state else 0.0)
 
     except Exception as e:
         logger.error("background_workflow_failed",
@@ -252,6 +377,41 @@ def run_workflow_task(migration_id: str, project_path: str, project_type: str, m
         migrations_db[migration_id]["status"] = "error"
         migrations_db[migration_id]["errors"] = [str(e)]
         migrations_db[migration_id]["completed_at"] = datetime.utcnow()
+
+        # Generate error report if possible
+        try:
+            if 'project_path' in locals():
+                project_name = Path(project_path).name
+                # Create a minimal state for error reporting
+                error_state = {
+                    "status": "error",
+                    "errors": [str(e)],
+                    "project_path": project_path,
+                    "project_type": migrations_db[migration_id].get("project_type", "unknown"),
+                    "migration_plan": None,
+                    "validation_result": None,
+                    "total_cost": 0.0,
+                    "agent_costs": {},
+                    "retry_count": 0
+                }
+                report_paths = report_generator.generate_all_reports(error_state, project_name)
+
+                # Store report paths in migration record
+                migrations_db[migration_id]["reports"] = {
+                    "html": f"/api/migrations/{migration_id}/report?type=html",
+                    "markdown": f"/api/migrations/{migration_id}/report?type=markdown",
+                    "json": f"/api/migrations/{migration_id}/report?type=json"
+                }
+                migrations_db[migration_id]["report_files"] = report_paths
+
+                logger.info("error_reports_generated",
+                           migration_id=migration_id,
+                           reports=list(report_paths.keys()))
+        except Exception as report_error:
+            logger.warning("error_report_generation_failed",
+                          migration_id=migration_id,
+                          error=str(report_error),
+                          exc_info=True)
 
     finally:
         # Clean up cloned repository if applicable
@@ -378,6 +538,11 @@ async def start_migration(request: MigrationStartRequest, background_tasks: Back
         # Validate the Git repository URL
         if not is_valid_git_repo_url(request.git_repo_url):
             raise HTTPException(status_code=400, detail=f"Invalid Git repository URL: {request.git_repo_url}")
+
+        # Validate repository access before attempting to clone
+        is_private_repo = await validate_repo_access(request.git_repo_url, request.github_token)
+        if is_private_repo and not request.github_token:
+            raise HTTPException(status_code=401, detail=f"Private repository requires GitHub token: {request.git_repo_url}")
 
         # Clone the repository to a temporary directory
         cloned_project_path = f"cloned_repos/{get_repo_name_from_url(request.git_repo_url)}_{uuid.uuid4().hex[:8]}"

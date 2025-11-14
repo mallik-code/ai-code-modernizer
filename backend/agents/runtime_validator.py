@@ -105,6 +105,9 @@ Be thorough and prioritize correctness."""
                            project_type=project_type,
                            has_migration_plan=migration_plan is not None)
 
+            # Create Docker validator with forced cleanup enabled
+            validator = DockerValidator(timeout=timeout, cleanup_containers=True)
+
             # Send initial update about validation start
             self.send_update(
                 message=f"Starting runtime validation for {project_type} project",
@@ -124,7 +127,7 @@ Be thorough and prioritize correctness."""
                     current = dep_info.get("current_version", "unknown")
                     target = dep_info.get("target_version", "unknown")
                     dep_list.append(f"{pkg_name}: {current} → {target}")
-                
+
                 self.send_update(
                     message=f"Testing {len(dependencies)} dependency upgrades",
                     message_type="validation_info",
@@ -133,9 +136,6 @@ Be thorough and prioritize correctness."""
                         "total_dependencies": len(dependencies)
                     }
                 )
-
-            # Create Docker validator
-            validator = DockerValidator(timeout=timeout)
 
             self.send_update(
                 message="Creating Docker container for validation",
@@ -232,6 +232,11 @@ Be thorough and prioritize correctness."""
 
         except Exception as e:
             self.logger.error("runtime_validation_failed", error=str(e), exc_info=True)
+            # Ensure cleanup happens even when there's an exception
+            try:
+                validator.cleanup_all()
+            except Exception as cleanup_error:
+                self.logger.warning("cleanup_failed_in_exception", error=str(cleanup_error))
             return {
                 "status": "error",
                 "error": str(e)
