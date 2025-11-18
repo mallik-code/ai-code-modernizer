@@ -42,7 +42,8 @@ def clone_repository(
     local_path: str,
     branch: str = None,
     github_token: Optional[str] = None,
-    force_fresh_clone: bool = False
+    force_fresh_clone: bool = False,
+    max_retries: int = 3
 ) -> bool:
     """Clone a Git repository to a local path.
 
@@ -52,148 +53,246 @@ def clone_repository(
         branch: Optional branch name to checkout
         github_token: Optional GitHub personal access token for private repos
         force_fresh_clone: If True, remove existing directory before cloning
+        max_retries: Maximum number of retry attempts (default: 3)
 
     Returns:
         True if cloning was successful, False otherwise
     """
-    try:
-        repo_path = Path(local_path)
+    repo_path = Path(local_path)
 
-        # Handle existing directory
-        if repo_path.exists():
-            if force_fresh_clone:
-                logger.info("removing_existing_directory", path=str(repo_path))
-                shutil.rmtree(repo_path)
-            else:
-                # Check if it's already a git repo
-                git_dir = repo_path / ".git"
-                if git_dir.exists():
-                    logger.info("directory_exists_is_git_repo", path=str(repo_path))
-                    # Pull latest changes instead of cloning
-                    try:
-                        result = subprocess.run(
-                            ["git", "pull"],
-                            cwd=repo_path,
-                            capture_output=True,
-                            text=True,
-                            timeout=60
-                        )
-                        if result.returncode != 0:
-                            logger.warning("git_pull_failed",
-                                         cwd=str(repo_path),
-                                         stderr=result.stderr)
-                        else:
-                            logger.info("git_pull_success", cwd=str(repo_path))
-                            return True
-                    except subprocess.TimeoutExpired:
-                        logger.warning("git_pull_timeout", cwd=str(repo_path))
-                        return False
+    for attempt in range(max_retries):
+        try:
+            logger.info("git_clone_attempt",
+                       attempt=attempt+1,
+                       max_attempts=max_retries,
+                       repo_url=repo_url,
+                       local_path=str(repo_path))
+
+            # Handle existing directory
+            if repo_path.exists():
+                if force_fresh_clone:
+                    logger.info("removing_existing_directory", path=str(repo_path))
+                    shutil.rmtree(repo_path)
                 else:
-                    logger.error("path_exists_not_git_repo", path=str(repo_path))
-                    return False
+                    # Check if it's already a git repo
+                    git_dir = repo_path / ".git"
+                    if git_dir.exists():
+                        logger.info("directory_exists_is_git_repo", path=str(repo_path))
+                        # Pull latest changes instead of cloning
+                        try:
+                            result = subprocess.run(
+                                ["git", "pull"],
+                                cwd=repo_path,
+                                capture_output=True,
+                                text=True,
+                                timeout=60
+                            )
+                            if result.returncode != 0:
+                                logger.warning("git_pull_failed",
+                                             cwd=str(repo_path),
+                                             stderr=result.stderr)
+                            else:
+                                logger.info("git_pull_success", cwd=str(repo_path))
+                                # Verify that the repo has content beyond .git folder
+                                if _has_content_beyond_git_folder(repo_path):
+                                    return True
+                                else:
+                                    logger.warning("git_pull_resulted_in_only_git_folder",
+                                                 repo_url=repo_url,
+                                                 local_path=str(repo_path))
+                                    # Remove the incomplete repo and try cloning fresh
+                                    shutil.rmtree(repo_path, ignore_errors=True)
+                                    # Fall through to clone below
+                        except subprocess.TimeoutExpired:
+                            logger.warning("git_pull_timeout", cwd=str(repo_path))
+                            # Fall through to clone below
+                            shutil.rmtree(repo_path, ignore_errors=True)
+                    else:
+                        logger.error("path_exists_not_git_repo", path=str(repo_path))
+                        shutil.rmtree(repo_path, ignore_errors=True)
 
-        # Prepare the clone command
-        clone_cmd = ["git", "clone"]
+            # Prepare the clone command
+            clone_cmd = ["git", "clone"]
 
-        # Add branch if specified
-        if branch:
-            clone_cmd.extend(["--branch", branch])
+            # Add branch if specified
+            if branch:
+                clone_cmd.extend(["--branch", branch])
 
-        # For private repositories, use token if provided
-        if github_token and ("github.com" in repo_url or "gitlab.com" in repo_url):
-            # Insert token into HTTPS URL
-            if repo_url.startswith("https://"):
-                # For GitHub
-                if "github.com" in repo_url:
-                    parsed = urlparse(repo_url)
-                    repo_url = f"https://oauth2:{github_token}@{parsed.netloc}{parsed.path}"
-                # For GitLab
-                elif "gitlab.com" in repo_url:
-                    parsed = urlparse(repo_url)
-                    repo_url = f"https://gitlab-ci-token:{github_token}@{parsed.netloc}{parsed.path}"
+            # For private repositories, use token if provided
+            if github_token and ("github.com" in repo_url or "gitlab.com" in repo_url):
+                # Insert token into HTTPS URL
+                if repo_url.startswith("https://"):
+                    # For GitHub
+                    if "github.com" in repo_url:
+                        parsed = urlparse(repo_url)
+                        repo_url = f"https://oauth2:{github_token}@{parsed.netloc}{parsed.path}"
+                    # For GitLab
+                    elif "gitlab.com" in repo_url:
+                        parsed = urlparse(repo_url)
+                        repo_url = f"https://gitlab-ci-token:{github_token}@{parsed.netloc}{parsed.path}"
             # For SSH URLs, token won't work directly, but we'll log this
             elif repo_url.startswith("git@"):
                 logger.info("ssh_authentication_note",
                            message="Using SSH key for authentication; ensure SSH key is configured")
-        elif github_token and "bitbucket.org" in repo_url:
-            # For Bitbucket
-            parsed = urlparse(repo_url)
-            repo_url = f"https://x-token-auth:{github_token}@{parsed.netloc}{parsed.path}"
+            elif github_token and "bitbucket.org" in repo_url:
+                # For Bitbucket
+                parsed = urlparse(repo_url)
+                repo_url = f"https://x-token-auth:{github_token}@{parsed.netloc}{parsed.path}"
 
-        clone_cmd.extend([repo_url, str(repo_path)])
+            clone_cmd.extend([repo_url, str(repo_path)])
 
-        logger.info("starting_git_clone",
-                   command=" ".join(clone_cmd[:2] + ["***", str(repo_path)] if github_token else clone_cmd))
+            logger.info("starting_git_clone",
+                       command=" ".join(clone_cmd[:2] + ["***", str(repo_path)] if github_token else clone_cmd))
 
-        # Execute the clone command
-        result = subprocess.run(
-            clone_cmd,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minutes timeout
-        )
-
-        if result.returncode != 0:
-            logger.error("git_clone_failed",
-                        stderr=result.stderr,
-                        stdout=result.stdout,
-                        repo_url=repo_url)
-            # If we get a permission error, try alternative authentication methods
-            if "Authentication failed" in result.stderr or "Permission denied" in result.stderr:
-                logger.warning("auth_failed_trying_alternative", repo_url=repo_url)
-
-                # For GitHub, try using credential helper with token
-                if github_token and "github.com" in repo_url:
-                    return _clone_with_github_token_auth(repo_url, repo_path, branch, github_token)
-
-            return False
-
-        # Double-check that files were actually cloned (not just .git folder)
-        files_after_clone = list(repo_path.iterdir())
-        if len(files_after_clone) == 1 and files_after_clone[0].name == '.git':
-            logger.error("git_clone_incomplete_only_git_folder",
-                        repo_url=repo_url,
-                        local_path=str(repo_path))
-            return False
-
-        logger.info("git_clone_success",
-                   repo_url=repo_url,
-                   local_path=str(repo_path),
-                   files_count=len(files_after_clone))
-
-        # If a specific branch was requested and different from default, checkout that branch
-        if branch:
-            # First, fetch all branches to make sure the requested branch exists
-            fetch_result = subprocess.run(
-                ["git", "fetch", "origin"],
-                cwd=repo_path,
+            # Execute the clone command
+            result = subprocess.run(
+                clone_cmd,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=300  # 5 minutes timeout
             )
 
-            if fetch_result.returncode == 0:
-                # Check if the branch exists locally or remotely
-                branch_check = subprocess.run(
-                    ["git", "show-ref", "--verify", f"refs/heads/{branch}"],
+            if result.returncode != 0:
+                logger.error("git_clone_failed",
+                            stderr=result.stderr,
+                            stdout=result.stdout,
+                            repo_url=repo_url)
+                # If we get a permission error, try alternative authentication methods
+                if "Authentication failed" in result.stderr or "Permission denied" in result.stderr:
+                    logger.warning("auth_failed_trying_alternative", repo_url=repo_url)
+
+                    # For GitHub, try using credential helper with token
+                    if github_token and "github.com" in repo_url:
+                        return _clone_with_github_token_auth(repo_url, repo_path, branch, github_token)
+
+                return False
+
+            # Double-check that files were actually cloned (not just .git folder)
+            files_after_clone = list(repo_path.iterdir())
+            if len(files_after_clone) == 1 and files_after_clone[0].name == '.git':
+                logger.warning("git_clone_appears_shallow_retrying_fetch",
+                              repo_url=repo_url,
+                              local_path=str(repo_path))
+
+                # Try to fetch all content to make sure we have a complete clone
+                fetch_result = subprocess.run(
+                    ["git", "fetch", "--all"],
                     cwd=repo_path,
                     capture_output=True,
                     text=True
                 )
 
-                # If branch doesn't exist locally, check if it exists on remote
-                if branch_check.returncode != 0:
-                    remote_branch_check = subprocess.run(
-                        ["git", "ls-remote", "--heads", "origin", branch],
+                if fetch_result.returncode == 0:
+                    # Try pulling the specific branch if specified
+                    if branch:
+                        pull_result = subprocess.run(
+                            ["git", "pull", "origin", branch],
+                            cwd=repo_path,
+                            capture_output=True,
+                            text=True
+                        )
+
+                        if pull_result.returncode == 0:
+                            # Check again if files exist now
+                            files_after_fetch = list(repo_path.iterdir())
+                            if len(files_after_fetch) == 1 and files_after_fetch[0].name == '.git':
+                                logger.error("git_clone_still_incomplete_after_fetch",
+                                            repo_url=repo_url,
+                                            local_path=str(repo_path))
+                                return False
+                            else:
+                                logger.info("git_clone_fetch_success",
+                                          repo_url=repo_url,
+                                          local_path=str(repo_path),
+                                          files_count=len(files_after_fetch))
+                        else:
+                            logger.error("git_pull_failed_after_fetch",
+                                        repo_url=repo_url,
+                                        local_path=str(repo_path),
+                                        stderr=pull_result.stderr)
+                            return False
+                    else:
+                        # If no specific branch was specified, just pull the default
+                        pull_result = subprocess.run(
+                            ["git", "pull", "origin", "HEAD"],
+                            cwd=repo_path,
+                            capture_output=True,
+                            text=True
+                        )
+
+                        if pull_result.returncode != 0:
+                            logger.warning("git_pull_head_failed",
+                                          repo_url=repo_url,
+                                          local_path=str(repo_path),
+                                          stderr=pull_result.stderr)
+                            # Don't return False here, as the clone might still be valid
+                else:
+                    logger.error("git_fetch_all_failed",
+                                repo_url=repo_url,
+                                local_path=str(repo_path),
+                                stderr=fetch_result.stderr)
+                    return False
+
+            logger.info("git_clone_success",
+                       repo_url=repo_url,
+                       local_path=str(repo_path),
+                       files_count=len(files_after_clone))
+
+            # If a specific branch was requested and different from default, checkout that branch
+            if branch:
+                # First, fetch all branches to make sure the requested branch exists
+                fetch_result = subprocess.run(
+                    ["git", "fetch", "origin"],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
+                if fetch_result.returncode == 0:
+                    # Check if the branch exists locally or remotely
+                    branch_check = subprocess.run(
+                        ["git", "show-ref", "--verify", f"refs/heads/{branch}"],
                         cwd=repo_path,
                         capture_output=True,
                         text=True
                     )
 
-                    if remote_branch_check.returncode == 0 and remote_branch_check.stdout.strip():
-                        # Branch exists on remote, so we can checkout and track it
+                    # If branch doesn't exist locally, check if it exists on remote
+                    if branch_check.returncode != 0:
+                        remote_branch_check = subprocess.run(
+                            ["git", "ls-remote", "--heads", "origin", branch],
+                            cwd=repo_path,
+                            capture_output=True,
+                            text=True
+                        )
+
+                        if remote_branch_check.returncode == 0 and remote_branch_check.stdout.strip():
+                            # Branch exists on remote, so we can checkout and track it
+                            checkout_result = subprocess.run(
+                                ["git", "checkout", "-b", branch, f"origin/{branch}"],
+                                cwd=repo_path,
+                                capture_output=True,
+                                text=True,
+                                timeout=30
+                            )
+
+                            if checkout_result.returncode != 0:
+                                logger.warning("branch_checkout_failed",
+                                             branch=branch,
+                                             cwd=str(repo_path),
+                                             stderr=checkout_result.stderr)
+                                # Continue anyway as the clone was successful
+                        else:
+                            # Branch doesn't exist, just continue with whatever is checked out
+                            logger.warning("branch_does_not_exist",
+                                         branch=branch,
+                                         repo_url=repo_url)
+                            return True
+                    else:
+                        # Branch exists locally, just checkout
                         checkout_result = subprocess.run(
-                            ["git", "checkout", "-b", branch, f"origin/{branch}"],
+                            ["git", "checkout", branch],
                             cwd=repo_path,
                             capture_output=True,
                             text=True,
@@ -206,52 +305,97 @@ def clone_repository(
                                          cwd=str(repo_path),
                                          stderr=checkout_result.stderr)
                             # Continue anyway as the clone was successful
-                    else:
-                        # Branch doesn't exist, just continue with whatever is checked out
-                        logger.warning("branch_does_not_exist",
-                                     branch=branch,
-                                     repo_url=repo_url)
-                        return True
                 else:
-                    # Branch exists locally, just checkout
-                    checkout_result = subprocess.run(
-                        ["git", "checkout", branch],
+                    logger.warning("fetch_failed_for_branch",
+                                  branch=branch,
+                                  cwd=str(repo_path),
+                                  stderr=fetch_result.stderr)
+
+            # Verify files exist after branch operations
+            files_after_checkout = list(repo_path.iterdir())
+            if len(files_after_checkout) == 1 and files_after_checkout[0].name == '.git':
+                logger.warning("git_checkout_appears_shallow_retrying_fetch",
+                              repo_url=repo_url,
+                              local_path=str(repo_path),
+                              requested_branch=branch)
+
+                # Try to fetch all content after branch checkout
+                fetch_result = subprocess.run(
+                    ["git", "fetch", "--all"],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True
+                )
+
+                if fetch_result.returncode == 0:
+                    # Pull to get all content for the current branch
+                    pull_result = subprocess.run(
+                        ["git", "pull", "origin", branch] if branch else ["git", "pull", "origin", "HEAD"],
                         cwd=repo_path,
                         capture_output=True,
-                        text=True,
-                        timeout=30
+                        text=True
                     )
 
-                    if checkout_result.returncode != 0:
-                        logger.warning("branch_checkout_failed",
-                                     branch=branch,
-                                     cwd=str(repo_path),
-                                     stderr=checkout_result.stderr)
-                        # Continue anyway as the clone was successful
-            else:
-                logger.warning("fetch_failed_for_branch",
-                              branch=branch,
-                              cwd=str(repo_path),
-                              stderr=fetch_result.stderr)
+                    if pull_result.returncode == 0:
+                        # Check again if files exist now
+                        final_files = list(repo_path.iterdir())
+                        if len(final_files) == 1 and final_files[0].name == '.git':
+                            logger.error("git_checkout_still_incomplete_after_fetch",
+                                        repo_url=repo_url,
+                                        local_path=str(repo_path),
+                                        requested_branch=branch)
+                            return False
+                        else:
+                            logger.info("git_checkout_fetch_success",
+                                      repo_url=repo_url,
+                                      local_path=str(repo_path),
+                                      files_count=len(final_files),
+                                      requested_branch=branch)
+                    else:
+                        logger.error("git_pull_failed_after_checkout",
+                                    repo_url=repo_url,
+                                    local_path=str(repo_path),
+                                    requested_branch=branch,
+                                    stderr=pull_result.stderr)
+                        return False
+                else:
+                    logger.error("git_fetch_after_checkout_failed",
+                                repo_url=repo_url,
+                                local_path=str(repo_path),
+                                requested_branch=branch,
+                                stderr=fetch_result.stderr)
+                    return False
 
-        # Verify files exist after branch operations
-        files_after_checkout = list(repo_path.iterdir())
-        if len(files_after_checkout) == 1 and files_after_checkout[0].name == '.git':
-            logger.error("git_checkout_resulted_in_only_git_folder",
+            return True
+
+        except subprocess.TimeoutExpired:
+            logger.error("git_operation_timeout", repo_url=repo_url)
+            return False
+        except Exception as e:
+            logger.error("git_clone_error",
                         repo_url=repo_url,
-                        local_path=str(repo_path),
-                        requested_branch=branch)
+                        error=str(e))
             return False
 
-        return True
 
-    except subprocess.TimeoutExpired:
-        logger.error("git_operation_timeout", repo_url=repo_url)
-        return False
-    except Exception as e:
-        logger.error("git_clone_error",
-                    repo_url=repo_url,
-                    error=str(e))
+def _has_content_beyond_git_folder(repo_path: Path) -> bool:
+    """Check if the repository has actual content files beyond the .git folder.
+
+    Args:
+        repo_path: Path to the repository
+
+    Returns:
+        True if there are files/directories other than .git, False otherwise
+    """
+    try:
+        items = list(repo_path.iterdir())
+        # Check if all items are just the .git folder
+        if len(items) == 1 and items[0].name == '.git':
+            return False
+        # If there are other files/directories, return True
+        return len([item for item in items if item.name != '.git']) > 0
+    except Exception:
+        # If we can't read the directory, assume no content
         return False
 
 

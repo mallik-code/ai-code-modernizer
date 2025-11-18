@@ -159,7 +159,7 @@ Be thorough and prioritize correctness."""
                            tests_run=validation_result["tests_run"],
                            tests_passed=validation_result["tests_passed"])
 
-            # Send updates about validation results
+            # Send updates about validation results with port information
             self.send_update(
                 message="Docker validation completed",
                 message_type="validation_result",
@@ -169,9 +169,26 @@ Be thorough and prioritize correctness."""
                     "runtime_success": validation_result["runtime_success"],
                     "health_check_success": validation_result["health_check_success"],
                     "tests_run": validation_result["tests_run"],
-                    "tests_passed": validation_result["tests_passed"]
+                    "tests_passed": validation_result["tests_passed"],
+                    "container_port": validation_result.get("port", "N/A"),
+                    "container_id": validation_result.get("container_id", "N/A")
                 }
             )
+
+            # Log port information if container was created successfully
+            if validation_result.get("container_id"):
+                port_info_msg = f"Container {validation_result['container_id'][:12]} running on port {validation_result.get('port', 'N/A')}"
+                self.send_update(
+                    message=port_info_msg,
+                    message_type="port_info",
+                    extra_data={
+                        "container_id": validation_result["container_id"],
+                        "container_port": validation_result.get("port", "N/A")
+                    }
+                )
+                self.logger.info("container_port_info",
+                               container_id=validation_result["container_id"][:12],
+                               container_port=validation_result.get("port", "N/A"))
 
             # Analyze results with LLM
             # Skip LLM analysis if validation was clearly successful

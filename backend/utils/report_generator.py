@@ -36,7 +36,7 @@ class ReportGenerator:
 
         # Get branch name from workflow state
         deployment_result = workflow_state.get('deployment_result', {})
-        branch_name = deployment_result.get('branch_name', None)
+        branch_name = deployment_result.get('branch_name', None) if deployment_result else None
 
         # Create folder with branch name if available, otherwise use timestamp
         if branch_name:
@@ -332,7 +332,7 @@ class ReportGenerator:
 
         # Error Analyzer (always show, even if not executed)
         analyzer_status_text = "✅ COMPLETE" if error_analysis else "⚠️ NOT NEEDED"
-        fix_count = len(error_analysis.get('fix_suggestions', [])) if error_analysis else 0
+        fix_count = len(error_analysis.get('fix_suggestions', [])) if error_analysis and isinstance(error_analysis, dict) else 0
         analyzer_details = f"Analyzed errors, {fix_count} fix suggestions" if error_analysis else "Validation succeeded, no errors to analyze"
         md += f"| Error Analyzer | {analyzer_status_text} | ${analyzer_cost:.6f} | {analyzer_details} |\n"
 
@@ -443,7 +443,7 @@ class ReportGenerator:
 
         # Error Analyzer (always show, even if not executed)
         analyzer_status = "✅ COMPLETE" if error_analysis else "⚠️ NOT NEEDED"
-        fix_count = len(error_analysis.get('fix_suggestions', [])) if error_analysis else 0
+        fix_count = len(error_analysis.get('fix_suggestions', [])) if error_analysis and isinstance(error_analysis, dict) else 0
         md += "#### 3. 🔍 Error Analyzer Agent\n"
         md += "**Role:** Intelligent Error Diagnosis & Fix Suggestions\n\n"
         md += "**Responsibilities:**\n"
@@ -982,7 +982,7 @@ class ReportGenerator:
         # Error Analyzer (always show)
         analyzer_status_text = "COMPLETE" if error_analysis else "NOT NEEDED"
         analyzer_badge_class = "success" if error_analysis else "warning"
-        fix_count = len(error_analysis.get('fix_suggestions', [])) if error_analysis else 0
+        fix_count = len(error_analysis.get('fix_suggestions', [])) if error_analysis and isinstance(error_analysis, dict) else 0
         analyzer_details = f"Analyzed errors, {fix_count} fix suggestions" if error_analysis else "Validation succeeded, no errors to analyze"
         html += f"""
                 <tr>

@@ -40,3 +40,142 @@
   width: auto;
   margin: 0;
 }
+
+/* Help Modal Styles */
+.help-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.help-modal-content {
+  background: white;
+  width: 80%;
+  max-width: 800px;
+  max-height: 80vh;
+  overflow-y: auto;
+  border-radius: 8px;
+  padding: 20px;
+  position: relative;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.help-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.help-modal-title {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #333;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+}
+
+.close-button:hover {
+  color: #000;
+}
+
+.help-content {
+  line-height: 1.6;
+}
+
+.help-section {
+  margin-bottom: 20px;
+}
+
+.help-section-title {
+  color: #2563eb;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 5px;
+  margin-top: 20px;
+  margin-bottom: 10px;
+}
+
+.help-section:first-child .help-section-title {
+  margin-top: 0;
+}
+
+.help-toc-list {
+  list-style-type: decimal;
+  padding-left: 20px;
+}
+
+.help-toc-list li {
+  margin-bottom: 5px;
+}
+
+.help-steps {
+  background-color: #f8fafc;
+  border-left: 3px solid #2563eb;
+  padding: 10px 15px;
+  margin: 10px 0;
+}
+
+.help-step-line {
+  margin: 5px 0;
+  font-family: monospace;
+  white-space: pre;
+}
+
+.help-content-list {
+  padding-left: 20px;
+}
+
+.help-content-list li {
+  margin-bottom: 8px;
+}
+
+.help-code-block {
+  background-color: #1e293b;
+  color: #e2e8f0;
+  padding: 15px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  margin: 10px 0;
+}
+
+.help-text {
+  font-size: 0.95rem;
+}
+
+.help-paragraph {
+  margin-bottom: 10px;
+}
+
+.help-important {
+  background-color: #fef3c7;
+  border-left: 3px solid #f59e0b;
+  padding: 10px 15px;
+  border-radius: 0 4px 4px 0;
+}
+
+.help-icon {
+  margin-left: 5px;
+  color: #666;
+  cursor: pointer;
+}
+
+.help-icon:hover {
+  color: #333;
+}

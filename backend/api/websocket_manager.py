@@ -6,23 +6,12 @@ from utils.logger import setup_logger
 import logging
 from datetime import datetime
 import os
+from pathlib import Path
+
 
 logger = setup_logger(__name__)
-
-# Create a specific logger for websocket messages
-websocket_logger = logging.getLogger('websocket_messages')
-websocket_logger.setLevel(logging.INFO)
-
-# Create file handler which logs even debug messages
-fh = logging.FileHandler('websocket_messages.log')
-fh.setLevel(logging.INFO)
-
-# Create formatter and add it to the handlers
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-
-# Add the handlers to the logger
-websocket_logger.addHandler(fh)
+# The websocket messages will be logged through the unified logger
+websocket_logger = logger
 
 class ConnectionManager:
     def __init__(self):

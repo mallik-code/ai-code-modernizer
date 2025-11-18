@@ -65,3 +65,8 @@ DEVELOPMENT_PLAN_STATUS.md
 
 ./reports
 ./reports/*
+
+cloned_repos/
+target_repos/
+tmp/
+

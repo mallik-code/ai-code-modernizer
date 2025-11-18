@@ -587,7 +587,8 @@ async def start_migration(request: MigrationStartRequest, background_tasks: Back
             local_path=cloned_project_path,
             branch=request.git_branch,
             github_token=request.github_token,
-            force_fresh_clone=request.force_fresh_clone
+            force_fresh_clone=request.force_fresh_clone,
+            max_retries=request.max_retries
         )
 
         if not success:

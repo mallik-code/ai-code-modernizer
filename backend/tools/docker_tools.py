@@ -160,7 +160,10 @@ class DockerValidator:
             app_output = self._start_application(container, project_type, project_path)
             result["logs"]["startup"] = app_output
             result["runtime_success"] = True
-            self.logger.info("application_started", container_id=result["container_id"])
+            self.logger.info("application_started",
+                           container_id=result["container_id"],
+                           port=result["port"],
+                           project_path=project_path)
 
             # Run health checks
             health_result = self._run_health_check(container, project_type)
@@ -230,7 +233,7 @@ class DockerValidator:
         return result
 
     def _create_container(self, project_path: str, project_type: str) -> Tuple[Container, str, int]:
-        """Create Docker container with appropriate base image.
+        """Create Docker container with appropriate base image and available port mapping.
 
         Args:
             project_path: Path to project
@@ -242,12 +245,12 @@ class DockerValidator:
         if project_type == "nodejs":
             image_name = "node:18-alpine"
             working_dir = "/app"
-            # Default port for Node.js apps (Express, etc.)
+            # Default port for Node.js apps
             app_port = 3000
         elif project_type == "python":
             image_name = "python:3.11-slim"
             working_dir = "/app"
-            # Default port for Python apps (Flask, FastAPI, etc.)
+            # Default port for Python apps
             app_port = 5000
         else:
             raise ValueError(f"Unsupported project type: {project_type}")
@@ -287,6 +290,8 @@ class DockerValidator:
             self.logger.debug("no_existing_container", name=container_name)
 
         # Create container with port mapping for browser access
+        # Use a random available port on the host, mapped to the app's expected port in the container
+        host_port = self._get_available_host_port()
         container = self.client.containers.create(
             image=image_name,
             name=container_name,
@@ -294,17 +299,41 @@ class DockerValidator:
             working_dir=working_dir,
             detach=True,
             network_mode="bridge",
-            ports={f'{app_port}/tcp': app_port}  # Map container port to host port
+            ports={f'{app_port}/tcp': host_port}  # Map container port to available host port
         )
 
         self.logger.info("container_created_with_port_mapping",
                         container_id=container.id[:12],
                         name=container_name,
-                        port=app_port)
+                        container_port=app_port,
+                        host_port=host_port)
         container.start()
         self.containers.append(container)
 
         return container, image_name, app_port
+
+    def _get_available_host_port(self) -> int:
+        """Get an available host port to map to the container.
+
+        Returns:
+            An available port number on the host system
+        """
+        import socket
+
+        # Try to find an available port starting from a random high port number
+        for port in range(8000, 9000):  # Try ports in the 8000-8999 range
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                result = sock.connect_ex(('127.0.0.1', port))
+                if result != 0:  # Port is available
+                    return port
+
+        # If no port in the range is available, use a random high port
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(('', 0))  # Bind to any available port
+            sock.listen(1)
+            port = sock.getsockname()[1]
+            sock.close()
+            return port
 
     def _copy_project_to_container(self, container: Container, project_path: str):
         """Copy project files to container.
@@ -479,14 +508,16 @@ class DockerValidator:
                 import json
                 package_data = json.loads(output.decode())
                 start_script = package_data.get("scripts", {}).get("start", "node index.js")
-                # Use nohup to prevent the process from becoming a zombie
-                cmd = f"sh -c 'nohup {start_script} > /tmp/app.log 2>&1 &'"
+
+                # Set PORT environment variable to default
+                # Applications that respect PORT will use it, others will use their default
+                cmd = f"sh -c 'PORT=3000 nohup {start_script} > /tmp/app.log 2>&1 &'"
             else:
-                cmd = "sh -c 'nohup node index.js > /tmp/app.log 2>&1 &'"
+                cmd = f"sh -c 'PORT=3000 nohup node index.js > /tmp/app.log 2>&1 &'"
 
         elif project_type == "python":
             # Look for main.py, app.py, or server.py
-            cmd = "sh -c 'nohup python app.py > /tmp/app.log 2>&1 &' || sh -c 'nohup python main.py > /tmp/app.log 2>&1 &' || sh -c 'nohup python server.py > /tmp/app.log 2>&1 &'"
+            cmd = f"sh -c 'PORT=5000 nohup python app.py > /tmp/app.log 2>&1 &' || sh -c 'PORT=5000 nohup python main.py > /tmp/app.log 2>&1 &' || sh -c 'PORT=5000 nohup python server.py > /tmp/app.log 2>&1 &'"
 
         self.logger.info("starting_application", command=cmd)
 
@@ -515,7 +546,7 @@ class DockerValidator:
 
         # Check if process is running
         if project_type == "nodejs":
-            check_cmd = "sh -c 'ps aux | grep \"node\" | grep -v grep'"
+            check_cmd = "sh -c 'ps aux | grep -v grep | (grep \"node\" || grep \"parcel\" || grep \"npm\" || grep \"yarn\")'"
         else:
             check_cmd = "sh -c 'ps aux | grep \"python\" | grep -v grep'"
 
@@ -529,14 +560,14 @@ class DockerValidator:
             "success": process_running,
             "process_running": process_running,
             "checks_performed": ["process_check"],
-            "process_output": output_str[:200] if process_running else None
+            "process_output": output_str[:500] if process_running else None  # Increased output size
         }
 
         if not process_running:
             # Get logs if process not running
-            exit_code, logs = container.exec_run("cat /tmp/*.log || echo 'No logs found'")
+            exit_code, logs = container.exec_run("cat /tmp/app.log 2>/dev/null || echo 'No logs available'")
             result["logs"] = logs.decode()[:1000]
-            self.logger.warning("process_not_running", project_type=project_type)
+            self.logger.warning("process_not_running", project_type=project_type, process_output=output_str[:300])
         else:
             self.logger.info("process_running_successfully",
                            project_type=project_type,
